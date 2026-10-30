@@ -27,12 +27,12 @@ For each flag, state whether it's justified (with the reason) or a weakening tha
 
 ## 3. Run checks (from repo root)
 
-| When                          | Run                                                                                                                       |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Always                        | `npm run lint`, `npm run typecheck`, `npm test`                                                                           |
-| api / shared / prisma changed | `npm run test:integration` (needs `docker compose up -d`; if the DB is unavailable, mark NOT RUN, never PASS)             |
-| prisma changed                | `npm exec -w apps/api -- prisma validate`, and confirm a migration accompanies schema changes                             |
-| any app code changed          | `npm run build`                                                                                                           |
+| When                          | Run                                                                                                                           |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Always                        | `npm run lint`, `npm run typecheck`, `npm test`                                                                               |
+| api / shared / prisma changed | `npm run test:integration` (needs `docker compose up -d`; if the DB is unavailable, mark NOT RUN, never PASS)                 |
+| prisma changed                | `npm exec -w apps/api -- prisma validate`, `npm run db:drift` (after migrating), and confirm a migration accompanies changes  |
+| any app code changed          | `npm run build`                                                                                                               |
 | user-facing flow changed      | Exercise it in the running app (`npm run dev`, or the `run` skill), or state explicitly that it was not verified in a browser |
 
 Run every required check even if an earlier one fails, so the report is complete.

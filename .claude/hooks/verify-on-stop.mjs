@@ -91,7 +91,9 @@ function main() {
     // Already gave up on this exact diff: warn the user, don't loop again.
     if (fingerprint === state.gaveUpHash) {
       process.stdout.write(
-        JSON.stringify({ systemMessage: `Stop gate: \`npm run ${check}\` is still failing. Treat the work as NOT complete.` }),
+        JSON.stringify({
+          systemMessage: `Stop gate: \`npm run ${check}\` is still failing. Treat the work as NOT complete.`,
+        }),
       );
       return 0;
     }

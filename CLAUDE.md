@@ -19,6 +19,10 @@ Full design: `docs/ARCHITECTURE.md` (read only the section a task needs).
   `packages/shared` (Zod schemas, enums, DTOs, the single source of truth for validation on
   client and server).
 - PostgreSQL + PostGIS via Prisma. Raw SQL only in `apps/api/src/repositories/geo.repository.ts`.
+- `*Geog` columns are Postgres generated columns that Prisma can't model. Hand-edit any migration
+  touching them or their lat/lng sources, copy `dbgenerated` strings from `prisma db pull --print`,
+  and keep `npm run db:drift` passing (rules: `docs/ARCHITECTURE.md` §4).
+- Validation limits in `TRANSPORT_POLICY` (shared) are tunable V1 product policy, not integrity rules.
 - API layering: routes (parse/validate) → services → repositories. Keep routes thin.
 - Explicit domain tables (TruckLeg, TransportRequest, WarehouseSpace, StorageRequest). No polymorphic "capacity" table.
 
@@ -51,7 +55,7 @@ Full design: `docs/ARCHITECTURE.md` (read only the section a task needs).
 
 `npm run dev` · `npm run lint` · `npm run typecheck` · `npm test` (unit) ·
 `npm run test:integration` (needs `docker compose up -d`) · `npm run build` ·
-`npm run db:migrate` · `npm run db:seed`
+`npm run db:migrate` · `npm run db:drift` (schema vs. migrated DB) · `npm run db:seed`
 
 ## Testing & verification
 

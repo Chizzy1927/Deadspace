@@ -1,0 +1,27 @@
+# Local development database: PostgreSQL 17 + PostGIS 3.5.
+# Host port 5433 avoids clashing with a natively installed PostgreSQL on 5432.
+# The image enables the postgis extension in POSTGRES_DB on first start.
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    # The image is published for amd64 only; ARM64 hosts (e.g. Windows on ARM, Apple Silicon)
+    # run it under Docker Desktop's emulation.
+    platform: linux/amd64
+    environment:
+      POSTGRES_USER: deadspace
+      POSTGRES_PASSWORD: deadspace # local development only
+      POSTGRES_DB: deadspace
+    ports:
+      - '5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # Probe over TCP: during first-start init (when PostGIS is installed) the image's temporary
+      # server listens only on the Unix socket, so this passes only once init has finished.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U deadspace -d deadspace']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:

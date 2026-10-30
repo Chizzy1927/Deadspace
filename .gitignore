@@ -4,6 +4,8 @@ dist/
 build/
 coverage/
 *.tsbuildinfo
+# Prisma client is generated on install/build
+apps/api/src/generated/
 
 # Environment
 .env
