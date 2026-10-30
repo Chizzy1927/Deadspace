@@ -377,7 +377,7 @@ describe('explainability', () => {
     expect(reasons).toEqual([
       'Est. 12 mi from your location (your radius: 25 mi)',
       'Free for your whole 30-day stay; available for 21 more days if you need to extend',
-      'Your 40 pallets take 40% of the 100 free pallet positions (minimum block: 20)',
+      'Your 40 pallets take 40% of the 100 pallet positions offered (minimum block: 20)',
       'Est. total $960: $16 per pallet per month, prorated over 30 days, plus $8 per pallet handling (in and out); within your $1,000 budget',
     ]);
   });
@@ -389,7 +389,7 @@ describe('explainability', () => {
     expect(reasons).toEqual([
       'At your location (est. under 1 mi away)',
       "Free for your whole 30-day stay; availability ends on your move-out day, so there's no room to extend",
-      'Your 40 pallets take 40% of the 100 free pallet positions',
+      'Your 40 pallets take 40% of the 100 pallet positions offered',
       'Offers the temperature-controlled, food-grade space you need (self-declared by the operator)',
       'Est. total $600: $15 per pallet per month, prorated over 30 days; est. $100 over your $500 budget',
     ]);

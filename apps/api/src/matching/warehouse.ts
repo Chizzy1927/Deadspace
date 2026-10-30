@@ -177,7 +177,7 @@ function explain(
 
   let spaceReason =
     `Your ${request.pallets} pallets take ${percent(metrics.availableSpaceUsed)} of the ` +
-    `${space.quantityAvailable} free pallet positions`;
+    `${space.quantityAvailable} pallet positions offered`;
   if (space.minPallets !== null) spaceReason += ` (minimum block: ${space.minPallets})`;
   reasons.push(spaceReason);
 
