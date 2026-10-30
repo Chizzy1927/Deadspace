@@ -9,9 +9,14 @@ export function App() {
           <Link to="/" className="text-lg font-semibold">
             DeadSpace
           </Link>
-          <Link to="/request/transport" className="text-sm text-blue-700 hover:underline">
-            Request transport
-          </Link>
+          <nav className="flex gap-4">
+            <Link to="/request/transport" className="text-sm text-blue-700 hover:underline">
+              Request transport
+            </Link>
+            <Link to="/list/truck" className="text-sm text-blue-700 hover:underline">
+              List a truck leg
+            </Link>
+          </nav>
         </div>
       </header>
       <main className="mx-auto max-w-4xl px-4 py-6">

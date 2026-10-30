@@ -1,12 +1,14 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type CreateTransportRequestInput, TRANSPORT_LIMITS, TrailerType } from '@deadspace/shared';
 import { useMutation } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router';
-import { ApiError } from '../api/client';
 import { createTransportRequest } from '../api/transport';
+import { Field } from '../components/Field';
+import { fieldAria, inputClass } from '../forms/field-aria';
 import { LocationInput } from '../components/LocationInput';
+import { submitErrorMessage } from '../forms/server-errors';
 import { TransportRequestFormSchema, type TransportRequestFormValues } from '../forms/transport-request-form';
 import { TRAILER_LABELS } from '../format';
 
@@ -25,38 +27,10 @@ const FIELDS = [
   'maxBudget',
   'notes',
 ] as const satisfies readonly (keyof TransportRequestFormValues)[];
-const isField = (name: string): name is (typeof FIELDS)[number] => (FIELDS as readonly string[]).includes(name);
-
-const inputClass = 'mt-1 w-full rounded border border-slate-300 px-3 py-2';
-
-function Field({
-  id,
-  label,
-  error,
-  children,
-}: {
-  id: string;
-  label: string;
-  error?: string | undefined;
-  children: ReactNode;
-}) {
-  return (
-    <div>
-      <label htmlFor={id} className="block text-sm font-medium">
-        {label}
-      </label>
-      {children}
-      {error && (
-        <p id={`${id}-error`} className="mt-1 text-sm text-red-700">
-          {error}
-        </p>
-      )}
-    </div>
-  );
-}
 
 export function TransportRequestPage() {
   const navigate = useNavigate();
+  const [formError, setFormError] = useState<string | null>(null);
   const {
     register,
     control,
@@ -77,23 +51,12 @@ export function TransportRequestPage() {
 
   const submit = useMutation({
     mutationFn: createTransportRequest,
+    onMutate: () => setFormError(null),
     onSuccess: (request) => navigate(`/requests/transport/${request.id}/matches`),
-    onError: (error) => {
-      // Map server-side field errors onto the form; anything else is shown as a form-level error.
-      if (error instanceof ApiError && error.issues.length > 0) {
-        for (const issue of error.issues) {
-          const field = issue.path.split('.')[0] ?? '';
-          if (isField(field)) setError(field, { message: issue.message });
-        }
-      }
-    },
+    onError: (error) => setFormError(submitErrorMessage(error, FIELDS, setError)),
   });
 
-  const aria = (name: (typeof FIELDS)[number], id: string) => ({
-    id,
-    'aria-invalid': errors[name] ? true : undefined,
-    'aria-describedby': errors[name] ? `${id}-error` : undefined,
-  });
+  const aria = (name: (typeof FIELDS)[number], id: string) => fieldAria(id, { error: errors[name]?.message });
 
   return (
     <section className="space-y-6">
@@ -216,9 +179,9 @@ export function TransportRequestPage() {
           <textarea rows={3} className={inputClass} {...aria('notes', 'notes')} {...register('notes')} />
         </Field>
 
-        {submit.isError && !(submit.error instanceof ApiError && submit.error.issues.length > 0) && (
+        {formError && (
           <p role="alert" className="rounded bg-red-50 px-3 py-2 text-red-800">
-            Could not submit your request: {submit.error.message}
+            Could not submit your request: {formError}
           </p>
         )}
 

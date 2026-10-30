@@ -105,6 +105,66 @@ describe('truck legs API (real PostGIS)', () => {
     expect(TruckLegSchema.parse(fetched.body)).toEqual(leg);
     expect((await request(app).get('/api/truck-legs/nope')).status).toBe(404);
   });
+
+  /** A carrier-form PARTIAL leg payload (committed values, arrive-by, notes, per-mile pricing). */
+  const partialLegPayload = (overrides: Record<string, unknown> = {}) => ({
+    companyName: 'Lone Star Freight',
+    contactName: 'Ana Ruiz',
+    contactEmail: 'ana@lonestar.example.com',
+    origin: DALLAS,
+    destination: HOUSTON,
+    departureEarliest: hoursFromNow(24),
+    departureLatest: hoursFromNow(30),
+    arriveBy: hoursFromNow(40),
+    loadState: 'PARTIAL',
+    trailerType: 'DRY_VAN',
+    totalPallets: 26,
+    totalWeightLbs: 45_000,
+    committedPallets: 14,
+    committedWeightLbs: 23_000,
+    maxDetourMiles: 45,
+    pricingBasis: 'PER_LOADED_MILE',
+    priceAmount: 2.35,
+    notes: 'Dock 4',
+    ...overrides,
+  });
+
+  it('persists every carrier-form field of a PARTIAL leg and serves it back', async () => {
+    const payload = partialLegPayload();
+    const created = await request(app).post('/api/truck-legs').send(payload);
+
+    expect(created.status).toBe(201);
+    const leg = TruckLegSchema.parse(created.body);
+    expect(leg).toMatchObject({
+      origin: DALLAS,
+      destination: HOUSTON,
+      loadState: 'PARTIAL',
+      committedPallets: 14,
+      committedWeightLbs: 23_000,
+      maxDetourMiles: 45,
+      pricingBasis: 'PER_LOADED_MILE',
+      priceAmount: 2.35,
+      notes: 'Dock 4',
+    });
+    expect(new Date(leg.arriveBy ?? '').toISOString()).toBe(payload.arriveBy);
+    const fetched = await request(app).get(`/api/truck-legs/${leg.id}`);
+    expect(TruckLegSchema.parse(fetched.body)).toEqual(leg);
+  });
+
+  it('rejects an invalid leg with per-field details the form can map, and stores nothing', async () => {
+    const res = await request(app)
+      .post('/api/truck-legs')
+      .send(partialLegPayload({ committedPallets: 26, departureLatest: hoursFromNow(24 + 73) }));
+
+    expect(res.status).toBe(400);
+    const { error } = ApiErrorResponseSchema.parse(res.body);
+    expect(error.code).toBe('VALIDATION_ERROR');
+    expect(error.details).toEqual([
+      { path: 'departureLatest', message: 'Departure window must be at most 72 hours' },
+      { path: 'committedPallets', message: 'Committed pallets must be less than total pallets' },
+    ]);
+    expect(await prisma.truckLeg.count()).toBe(0);
+  });
 });
 
 describe('create request → get matches (real PostGIS)', () => {
