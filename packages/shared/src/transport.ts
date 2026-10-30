@@ -37,9 +37,8 @@ export const TRANSPORT_POLICY = {
   defaultMaxDetourMiles: 100,
   /**
    * Largest detour allowance a carrier may declare. Beyond this a leg stops being a specific
-   * movement. Follow-up (Phase 3): the route-efficiency score divides by the carrier's own
-   * maxDetourMiles, so a higher declared limit inflates its score; normalise against a reference
-   * in matching/config.ts instead (see docs/ARCHITECTURE.md §9, Phase 3).
+   * movement. The allowance only decides feasibility: route efficiency is scored against a fixed
+   * reference (ROUTE_EFFICIENCY_REFERENCE_MILES in matching/config.ts), so it never raises ranking.
    */
   maxCarrierDetourMiles: 300,
   /**
@@ -235,7 +234,7 @@ export const TruckMatchMetricsSchema = z.object({
   spareWeightLbs: z.number().int(),
   palletUtilisation: UtilisationSchema,
   weightUtilisation: UtilisationSchema,
-  /** The dimension with the higher utilisation after the match. */
+  /** The dimension in which the request takes the larger share of the spare room (tie → PALLETS). */
   limitingCapacity: z.enum(['PALLETS', 'WEIGHT']),
   /** USD, from the listing's pricing basis. */
   estPrice: z.number(),
@@ -247,8 +246,13 @@ export const TransportMatchSchema = z.object({
   leg: TruckLegSchema,
   /** 0–100. */
   score: z.number().int().min(0).max(100),
-  /** Score components, each 0–1. */
-  breakdown: z.object({ routeEfficiency: z.number() }),
+  /** Score components, each 0–1; score = round(100 × Σ weight × component). */
+  breakdown: z.object({
+    routeEfficiency: z.number(),
+    capacityFit: z.number(),
+    price: z.number(),
+    timing: z.number(),
+  }),
   metrics: TruckMatchMetricsSchema,
   reasons: z.array(z.string()),
 });

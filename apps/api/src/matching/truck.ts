@@ -1,8 +1,8 @@
-// Truck leg ↔ transport request matching, V0 (Phase 2). Pure and deterministic: no DB, HTTP,
-// clock or randomness. Reads top to bottom: hard constraints → metrics → score → reasons → rank.
+// Truck leg ↔ transport request matching. Pure and deterministic: no DB, HTTP, clock or
+// randomness. Reads top to bottom: hard constraints → metrics → score → reasons → rank.
 // Spec: docs/ARCHITECTURE.md §5. Weights and thresholds: ./config.ts (tunable defaults).
 import type { LoadState, Status, TrailerType, TruckMatchMetrics, TruckPricingBasis } from '@deadspace/shared';
-import { HANDLING_HOURS, MAX_RESULTS, TRUCK_SCORE_WEIGHTS } from './config.js';
+import { HANDLING_HOURS, MAX_RESULTS, TRUCK_SCORE_WEIGHTS, type TruckScoreWeights } from './config.js';
 import {
   estAdditionalMiles,
   estDriveHours,
@@ -12,6 +12,15 @@ import {
   type LegRequestDistances,
   utilisation,
 } from './metrics.js';
+import {
+  capacityFit,
+  priceReference,
+  priceScore,
+  routeEfficiency,
+  timingScore,
+  type TruckScoreComponents,
+  weightedScore,
+} from './truck-score.js';
 
 const HOUR_MS = 3_600_000;
 
@@ -61,7 +70,7 @@ export type TruckRejection =
 export interface TruckMatchResult {
   legId: string;
   score: number;
-  breakdown: { routeEfficiency: number };
+  breakdown: TruckScoreComponents;
   metrics: TruckMatchMetrics;
   reasons: string[];
 }
@@ -77,7 +86,34 @@ export function earliestSchedule(request: TruckMatchRequest, { leg, distances }:
   const pickup = new Date(Math.max(arriveAtPickup.getTime(), request.pickupEarliest.getTime()));
   const arriveAtDropoff = addHours(pickup, HANDLING_HOURS + estDriveHours(distances.pickupToDropoff));
   const arriveAtDestination = addHours(arriveAtDropoff, HANDLING_HOURS + estDriveHours(distances.dropoffToDestination));
-  return { pickup, arriveAtDropoff, arriveAtDestination };
+  return { arriveAtPickup, pickup, arriveAtDropoff, arriveAtDestination };
+}
+
+export interface ScheduleSlack {
+  /** Est. hours to spare at the tightest point of the earliest schedule. */
+  hours: number;
+  limitedBy: 'PICKUP_WINDOW' | 'DELIVER_BY' | 'ARRIVE_BY';
+}
+
+/**
+ * How much the earliest est. schedule can slip before a fixed time is missed: the pickup window
+ * closing, the shipper's deliver-by, or the carrier's own arrive-by. Deadlines that aren't set are
+ * skipped; on equal slack the earlier stop is reported. Feasible legs never have negative slack.
+ */
+export function scheduleSlack(request: TruckMatchRequest, candidate: TruckCandidate): ScheduleSlack {
+  const schedule = earliestSchedule(request, candidate);
+  const hoursBetween = (from: Date, to: Date) => (to.getTime() - from.getTime()) / HOUR_MS;
+
+  let slack: ScheduleSlack = {
+    hours: hoursBetween(schedule.arriveAtPickup, request.pickupLatest),
+    limitedBy: 'PICKUP_WINDOW',
+  };
+  const tighten = (hours: number, limitedBy: ScheduleSlack['limitedBy']) => {
+    if (hours < slack.hours) slack = { hours, limitedBy };
+  };
+  if (request.deliverBy) tighten(hoursBetween(schedule.arriveAtDropoff, request.deliverBy), 'DELIVER_BY');
+  if (candidate.leg.arriveBy) tighten(hoursBetween(schedule.arriveAtDestination, candidate.leg.arriveBy), 'ARRIVE_BY');
+  return slack;
 }
 
 /**
@@ -113,7 +149,6 @@ export function checkTruckFeasibility(request: TruckMatchRequest, candidate: Tru
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
-const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 const percent = (ratio: number) => `${Math.round(ratio * 100)}%`;
 const miles = (n: number) => `${Math.round(n).toLocaleString('en-US')} mi`;
 const usd = (n: number) =>
@@ -126,6 +161,11 @@ function computeMetrics(request: TruckMatchRequest, { leg, distances }: TruckCan
   const pallets = utilisation(leg.committedPallets, request.pallets, leg.totalPallets);
   const weight = utilisation(leg.committedWeightLbs, request.weightLbs, leg.totalWeightLbs);
   const recovered = estEmptyMilesRecovered(leg.loadState, distances);
+  const sparePallets = leg.totalPallets - leg.committedPallets;
+  const spareWeightLbs = leg.totalWeightLbs - leg.committedWeightLbs;
+  // Same basis as the capacity score: the share of the spare room taken, not fill after (ties → PALLETS).
+  const palletShare = request.pallets / sparePallets;
+  const weightShare = request.weightLbs / spareWeightLbs;
   return {
     additional,
     metrics: {
@@ -133,23 +173,14 @@ function computeMetrics(request: TruckMatchRequest, { leg, distances }: TruckCan
       estAdditionalMiles: round1(additional),
       estLoadedMiles: round1(loaded),
       estEmptyMilesRecovered: recovered === null ? null : round1(recovered),
-      sparePallets: leg.totalPallets - leg.committedPallets,
-      spareWeightLbs: leg.totalWeightLbs - leg.committedWeightLbs,
+      sparePallets,
+      spareWeightLbs,
       palletUtilisation: pallets,
       weightUtilisation: weight,
-      limitingCapacity: weight.after > pallets.after ? 'WEIGHT' : 'PALLETS',
+      limitingCapacity: weightShare > palletShare ? 'WEIGHT' : 'PALLETS',
       estPrice: estPrice(leg.pricingBasis, leg.priceAmount, loaded),
     } satisfies TruckMatchMetrics,
   };
-}
-
-/**
- * V0 route efficiency: 1 − est. additional miles / the carrier's max detour, clamped to 0–1.
- * Known limitation, fixed in Phase 3: dividing by the carrier's own limit lets a higher declared
- * limit inflate the score (docs/ARCHITECTURE.md §9).
- */
-export function routeEfficiency(estAdditional: number, maxDetourMiles: number): number {
-  return clamp01(1 - estAdditional / maxDetourMiles);
 }
 
 /** Plain-language reasons, in a fixed order: route, load, capacity, timing, price. */
@@ -208,13 +239,37 @@ function explain(
   return reasons;
 }
 
+/** Est. price of a candidate, as shown in its metrics. */
+function candidatePrice({ leg, distances }: TruckCandidate): number {
+  return estPrice(leg.pricingBasis, leg.priceAmount, estRoadMiles(distances.pickupToDropoff));
+}
+
+export interface ScoreOptions {
+  /**
+   * Price the est. price is compared with (rankTruckLegs passes the budget or the median of all
+   * feasible matches). Defaults to scoring the candidate as the only match.
+   */
+  priceReference?: number;
+  weights?: Readonly<TruckScoreWeights>;
+}
+
 /** Scores and explains a candidate that has already passed checkTruckFeasibility. */
-export function scoreTruckLeg(request: TruckMatchRequest, candidate: TruckCandidate) {
+export function scoreTruckLeg(request: TruckMatchRequest, candidate: TruckCandidate, options: ScoreOptions = {}) {
+  const { leg } = candidate;
   const { additional, metrics } = computeMetrics(request, candidate);
-  const breakdown = { routeEfficiency: routeEfficiency(additional, candidate.leg.maxDetourMiles) };
-  const score = Math.round(100 * TRUCK_SCORE_WEIGHTS.routeEfficiency * breakdown.routeEfficiency);
+  const reference = options.priceReference ?? priceReference(request.maxBudget, [metrics.estPrice]);
+  const breakdown: TruckScoreComponents = {
+    routeEfficiency: routeEfficiency(additional),
+    capacityFit: capacityFit(
+      { pallets: request.pallets, weightLbs: request.weightLbs },
+      { pallets: metrics.sparePallets, weightLbs: metrics.spareWeightLbs },
+    ),
+    price: priceScore(metrics.estPrice, reference),
+    timing: timingScore(scheduleSlack(request, candidate).hours),
+  };
+  const score = weightedScore(breakdown, options.weights);
   const result: TruckMatchResult = {
-    legId: candidate.leg.id,
+    legId: leg.id,
     score,
     breakdown,
     metrics,
@@ -226,11 +281,19 @@ export function scoreTruckLeg(request: TruckMatchRequest, candidate: TruckCandid
 /**
  * Drops infeasible candidates, then ranks the rest: score desc, then fewer est. additional miles,
  * then lower est. price, then leg id (so equal inputs always produce the same order). Capped.
+ * Without a budget, price is scored against the median est. price of every feasible candidate,
+ * taken before the cap.
  */
-export function rankTruckLegs(request: TruckMatchRequest, candidates: readonly TruckCandidate[]): TruckMatchResult[] {
-  return candidates
-    .filter((candidate) => checkTruckFeasibility(request, candidate).length === 0)
-    .map((candidate) => scoreTruckLeg(request, candidate))
+export function rankTruckLegs(
+  request: TruckMatchRequest,
+  candidates: readonly TruckCandidate[],
+  weights: Readonly<TruckScoreWeights> = TRUCK_SCORE_WEIGHTS,
+): TruckMatchResult[] {
+  const feasible = candidates.filter((candidate) => checkTruckFeasibility(request, candidate).length === 0);
+  if (feasible.length === 0) return [];
+  const reference = priceReference(request.maxBudget, feasible.map(candidatePrice));
+  return feasible
+    .map((candidate) => scoreTruckLeg(request, candidate, { priceReference: reference, weights }))
     .sort(
       (a, b) =>
         b.result.score - a.result.score ||

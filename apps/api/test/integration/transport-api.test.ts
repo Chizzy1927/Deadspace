@@ -7,6 +7,8 @@ import {
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { MockGeocoder } from '../../src/geocoding/mock.js';
+import { TRUCK_SCORE_WEIGHTS } from '../../src/matching/config.js';
+import { weightedScore } from '../../src/matching/truck-score.js';
 import { createTruckLeg, toTruckLegCreateData } from '../../src/repositories/truck-leg.repository.js';
 import { buildSeedTruckLegs, defaultSeedAnchor } from '../../prisma/seed-data/truck-legs.js';
 import { createTestApp, createTestPrisma, DALLAS, HOUSTON, truckLegInput } from './helpers.js';
@@ -132,17 +134,20 @@ describe('create request → get matches (real PostGIS)', () => {
     expect(matches.map((m) => m.leg.id)).toEqual([onRoute.id, fortWorth.id, beaumont.id]);
 
     const [first, second, third] = matches;
-    expect(first?.score).toBe(100);
+    // Phase 3 weighted score (Phase 2 scored route efficiency alone: 100). On-route R = 1; 6 of 26
+    // spare pallets; $650 against the $700 budget; ≥ 4 h slack: 55 + 3.46 + 8.57 + 15 = 82.03.
+    expect(first?.breakdown).toEqual({ routeEfficiency: 1, capacityFit: 6 / 26, price: 1.5 - 650 / 700, timing: 1 });
+    expect(first?.score).toBe(82);
     expect(first?.metrics.estAdditionalMiles).toBe(0);
     expect(first?.metrics.estEmptyMilesRecovered).toBe(first?.metrics.estLoadedMiles);
     expect(first?.reasons).toContain('Est. price $650 (flat rate), within your $700 budget');
 
     expect(second?.metrics.estAdditionalMiles).toBeGreaterThan(15);
     expect(second?.metrics.estAdditionalMiles).toBeLessThan(30);
-    // V0: score is route efficiency alone, 1 − est. additional miles / 100-mile limit.
-    // (metrics are rounded to 0.1 mi for output, so compare the breakdown approximately.)
+    // Route efficiency is 1 − est. additional miles / the fixed 100-mile reference (metrics are
+    // rounded to 0.1 mi for output, so compare approximately), and the score is the weighted sum.
     expect(second?.breakdown.routeEfficiency).toBeCloseTo(1 - (second?.metrics.estAdditionalMiles ?? 0) / 100, 3);
-    expect(second?.score).toBe(Math.round(100 * (second?.breakdown.routeEfficiency ?? 0)));
+    expect(second?.score).toBe(second && weightedScore(second.breakdown, TRUCK_SCORE_WEIGHTS));
 
     expect(third?.metrics.estEmptyMilesRecovered).toBeNull();
     expect(third?.metrics.palletUtilisation).toEqual({ before: 10 / 26, after: 16 / 26 });
@@ -167,17 +172,20 @@ describe('seeded scenario: Dallas → Houston (real PostGIS + deterministic seed
     );
     const { matches } = TransportMatchesResponseSchema.parse(res.body);
 
+    // Phase 3 weighted scores; the order is unchanged from Phase 2 (scores were 100, 100, 100, 98,
+    // 78, 30 under route efficiency alone). No budget, so price is against the $670 median.
     const ranked = matches.map((m) => [m.leg.id.replace('seed-truck-leg-', ''), m.score] as const);
     expect(ranked).toEqual([
-      // Dallas → Houston, zero detour; tie broken by est. price ($567, $648, $650).
-      ['02', 100],
-      ['07', 100],
-      ['01', 100],
-      // Oklahoma City → Houston passes through Dallas (~2 est. mi).
-      ['13', 98],
+      // Dallas → Houston, zero detour. 02 is part-loaded: the request takes half its spare pallets.
+      ['02', 87],
+      // 07 ($647.42) and 01 ($650) both round to 81; tie broken by est. price.
+      ['07', 81],
+      ['01', 81],
+      // Oklahoma City → Houston passes through Dallas (~2 est. mi) but is the dearest ($1,150).
+      ['13', 72],
       // Fort Worth → Houston (~22 est. mi), then Dallas → Beaumont (~70 est. mi).
-      ['08', 78],
-      ['14', 30],
+      ['08', 68],
+      ['14', 42],
     ]);
 
     // Excluded for the intended reasons: 03 reefer, 04 flatbed, 05 departs day 5, 06 only 2 spare

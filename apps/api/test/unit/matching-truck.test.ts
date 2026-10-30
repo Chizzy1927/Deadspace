@@ -4,12 +4,13 @@ import { estDriveHours } from '../../src/matching/metrics.js';
 import {
   checkTruckFeasibility,
   rankTruckLegs,
-  routeEfficiency,
+  scheduleSlack,
   scoreTruckLeg,
   type TruckCandidate,
   type TruckLegFacts,
   type TruckMatchRequest,
 } from '../../src/matching/truck.js';
+import { weightedScore } from '../../src/matching/truck-score.js';
 
 const at = (iso: string) => new Date(`2026-11-02T${iso}:00Z`);
 const hoursAfter = (date: Date, h: number) => new Date(date.getTime() + h * 3_600_000);
@@ -148,17 +149,107 @@ describe('hard constraints', () => {
   });
 });
 
-describe('scoring', () => {
-  it('scores route efficiency as 1 − est. additional miles / max detour, clamped', () => {
-    expect(routeEfficiency(0, 100)).toBe(1);
-    expect(routeEfficiency(25, 100)).toBe(0.75);
-    expect(routeEfficiency(150, 100)).toBe(0);
+describe('schedule slack (timing input)', () => {
+  // On-route defaults: leave 13:00, at the pickup 13:00, window closes 20:00.
+  const dropoff = hoursAfter(at('13:00'), HANDLING_HOURS + estDriveHours(225));
+  const destination = hoursAfter(dropoff, HANDLING_HOURS);
+
+  it('is limited by the pickup window when no deadline is set', () => {
+    expect(scheduleSlack(request(), candidate())).toEqual({ hours: 7, limitedBy: 'PICKUP_WINDOW' });
   });
 
-  it('derives the 0–100 score from the configured weight', () => {
-    const { result } = scoreTruckLeg(request(), candidate({}, detourOf(20)));
-    expect(result.breakdown.routeEfficiency).toBeCloseTo(0.8);
-    expect(result.score).toBe(Math.round(100 * TRUCK_SCORE_WEIGHTS.routeEfficiency * 0.8));
+  it('is zero when the truck can only just reach the pickup before the window closes', () => {
+    const leg = { departureEarliest: at('20:00'), departureLatest: at('21:00') };
+    expect(checkTruckFeasibility(request(), candidate(leg))).toEqual([]);
+    expect(scheduleSlack(request(), candidate(leg))).toEqual({ hours: 0, limitedBy: 'PICKUP_WINDOW' });
+  });
+
+  it('measures from the drive-adjusted arrival at the pickup', () => {
+    // 50 straight-line miles ≈ 1.2 h: leaving 13:00 reaches the pickup 14:12, 5.8 h before 20:00.
+    const slack = scheduleSlack(request(), candidate({}, { originToPickup: 50, originToDestination: 260 }));
+    expect(slack.limitedBy).toBe('PICKUP_WINDOW');
+    expect(slack.hours).toBeCloseTo(7 - estDriveHours(50), 10);
+  });
+
+  it('is limited by a tight deliver-by', () => {
+    const slack = scheduleSlack(request({ deliverBy: hoursAfter(dropoff, 0.5) }), candidate());
+    expect(slack.limitedBy).toBe('DELIVER_BY');
+    expect(slack.hours).toBeCloseTo(0.5, 10);
+  });
+
+  it("is limited by a tight carrier arrive-by (the carrier's next commitment)", () => {
+    const slack = scheduleSlack(request(), candidate({ arriveBy: hoursAfter(destination, 0.25) }));
+    expect(slack.limitedBy).toBe('ARRIVE_BY');
+    expect(slack.hours).toBeCloseTo(0.25, 10);
+  });
+
+  it('takes the tightest of all applicable slacks', () => {
+    const req = request({ deliverBy: hoursAfter(dropoff, 3) });
+    const slack = scheduleSlack(req, candidate({ arriveBy: hoursAfter(destination, 1) }));
+    expect(slack.limitedBy).toBe('ARRIVE_BY');
+    expect(slack.hours).toBeCloseTo(1, 10);
+  });
+
+  it('gives full timing credit to a narrow declared departure window with comfortable slack', () => {
+    const leg = { departureEarliest: at('13:00'), departureLatest: at('13:15') };
+    expect(scheduleSlack(request(), candidate(leg))).toEqual({ hours: 7, limitedBy: 'PICKUP_WINDOW' });
+    expect(scoreTruckLeg(request(), candidate(leg)).result.breakdown.timing).toBe(1);
+  });
+
+  it('stays meaningful for a zero-width pickup window', () => {
+    const req = request({ pickupEarliest: at('12:00'), pickupLatest: at('12:00') });
+    const leg = { departureEarliest: at('10:00'), departureLatest: at('13:00') };
+    expect(checkTruckFeasibility(req, candidate(leg))).toEqual([]);
+    expect(scheduleSlack(req, candidate(leg))).toEqual({ hours: 2, limitedBy: 'PICKUP_WINDOW' });
+    expect(scoreTruckLeg(req, candidate(leg)).result.breakdown.timing).toBe(0.5);
+  });
+});
+
+describe('scoring', () => {
+  it('derives the 0–100 score from the four configured components', () => {
+    // 22.5 est. mi detour; 6 of 26 spare pallets; a single match (price neutral); 7 h slack.
+    const { result } = scoreTruckLeg(request(), candidate({}, detourOf(22.5)));
+    expect(result.breakdown.routeEfficiency).toBeCloseTo(0.775, 10);
+    expect(result.breakdown.capacityFit).toBeCloseTo(6 / 26, 10);
+    expect(result.breakdown.price).toBe(0.5);
+    expect(result.breakdown.timing).toBe(1);
+    // 100 × (0.55 × 0.775 + 0.15 × 6/26 + 0.15 × 0.5 + 0.15 × 1) = 68.59
+    expect(result.score).toBe(69);
+    expect(result.score).toBe(weightedScore(result.breakdown, TRUCK_SCORE_WEIGHTS));
+  });
+
+  it("ignores the carrier's declared detour allowance when scoring route efficiency", () => {
+    const routeScores = [30, 100, 300].map((maxDetourMiles) => {
+      const c = candidate({ maxDetourMiles }, detourOf(22.5));
+      expect(checkTruckFeasibility(request(), c)).toEqual([]);
+      return scoreTruckLeg(request(), c).result.breakdown.routeEfficiency;
+    });
+    expect(routeScores[0]).toBeCloseTo(0.775, 10);
+    expect(new Set(routeScores).size).toBe(1);
+  });
+
+  it('scores the same spare room equally, whatever freight is already on board', () => {
+    const emptySmallTruck = candidate({ totalPallets: 12, totalWeightLbs: 22_000 });
+    const partialBigTruck = candidate({ loadState: 'PARTIAL', committedPallets: 14, committedWeightLbs: 22_000 });
+    const fit = (c: TruckCandidate) => scoreTruckLeg(request(), c).result.breakdown.capacityFit;
+    expect(fit(emptySmallTruck)).toBe(0.5);
+    expect(fit(partialBigTruck)).toBe(0.5);
+  });
+
+  it('scores capacity by weight when weight is the scarcer spare dimension', () => {
+    const leg = { loadState: 'PARTIAL', committedPallets: 10, committedWeightLbs: 8_000 } as const;
+    const { result } = scoreTruckLeg(request({ pallets: 4, weightLbs: 30_000 }), candidate(leg));
+    expect(result.breakdown.capacityFit).toBeCloseTo(30_000 / 36_000, 10);
+  });
+
+  it('scores timing from the tightest est. schedule slack', () => {
+    const leg = { departureEarliest: at('19:00'), departureLatest: at('21:00') };
+    expect(scoreTruckLeg(request(), candidate(leg)).result.breakdown.timing).toBe(0.25);
+  });
+
+  it('prices against the budget when one is given', () => {
+    const { result } = scoreTruckLeg(request({ maxBudget: 1_000 }), candidate());
+    expect(result.breakdown.price).toBeCloseTo(1.5 - 650 / 1_000, 10);
   });
 });
 
@@ -195,6 +286,23 @@ describe('metrics', () => {
       limitingCapacity: 'WEIGHT',
       estPrice: 650,
     });
+  });
+
+  it('picks the limiting capacity by share of spare room, not by how full the trailer ends up', () => {
+    // 20 of 26 pallets but only 5,000 of 44,000 lb already on board; request 3 pallets, 20,000 lb.
+    // Trailer fill after: pallets 23/26 ≈ 88% vs weight 25,000/44,000 ≈ 57% (old basis: PALLETS).
+    // Share of spare room: pallets 3/6 = 50% vs weight 20,000/39,000 ≈ 51% (spare basis: WEIGHT).
+    const leg = { loadState: 'PARTIAL', committedPallets: 20, committedWeightLbs: 5_000 } as const;
+    const { result } = scoreTruckLeg(request({ pallets: 3, weightLbs: 20_000 }), candidate(leg));
+    expect(result.metrics.limitingCapacity).toBe('WEIGHT');
+    expect(result.breakdown.capacityFit).toBeCloseTo(20_000 / 39_000, 10);
+  });
+
+  it('picks PALLETS as the limiting capacity on an exact tie of spare-room shares', () => {
+    // Empty 24-pallet / 44,000 lb trailer: 6/24 pallets and 11,000/44,000 lb are both exactly 25%.
+    const leg = { totalPallets: 24 };
+    const { result } = scoreTruckLeg(request({ pallets: 6, weightLbs: 11_000 }), candidate(leg));
+    expect(result.metrics.limitingCapacity).toBe('PALLETS');
   });
 
   it('prices PER_LOADED_MILE legs from est. loaded miles', () => {
@@ -240,8 +348,10 @@ describe('ranking', () => {
   it('ranks an on-route leg above a 90-mile detour', () => {
     const ranked = rankTruckLegs(request(), [candidate({ id: 'detour' }, detourOf(90)), candidate({ id: 'on-route' })]);
     expect(ranked.map((m) => m.legId)).toEqual(['on-route', 'detour']);
-    expect(ranked[0]?.score).toBe(100);
-    expect(ranked[1]?.score).toBe(10);
+    // Phase 3 weighted score (was route efficiency alone: 100 and 10). Both: 6 of 26 spare pallets,
+    // same price (median → 0.5), ≥ 4 h slack. On-route: 55 + 3.46 + 7.5 + 15; detour: R = 0.1.
+    expect(ranked[0]?.score).toBe(81);
+    expect(ranked[1]?.score).toBe(31);
   });
 
   it('only returns feasible legs', () => {
@@ -254,15 +364,48 @@ describe('ranking', () => {
   });
 
   it('breaks score ties by fewer additional miles, then lower price, then leg id', () => {
-    const ranked = rankTruckLegs(request(), [
-      candidate({ id: 'd-pricier', priceAmount: 700 }),
+    // Price now feeds the score, so the fixture uses a fixed budget and price gaps small enough
+    // that every leg still rounds to the same integer score (86).
+    const ranked = rankTruckLegs(request({ maxBudget: 1_000 }), [
+      candidate({ id: 'd-pricier', priceAmount: 651 }),
       candidate({ id: 'c-same' }),
       candidate({ id: 'b-same' }),
-      // Score 100 after rounding (0.4 est. mi), but more additional miles than the others.
-      candidate({ id: 'a-more-miles', priceAmount: 100 }, detourOf(0.4)),
+      // Cheapest, but more additional miles (0.4 est. mi) than the others: miles outrank price.
+      candidate({ id: 'a-more-miles', priceAmount: 649 }, detourOf(0.4)),
     ]);
-    expect(ranked.map((m) => m.score)).toEqual([100, 100, 100, 100]);
+    expect(ranked.map((m) => m.score)).toEqual([86, 86, 86, 86]);
     expect(ranked.map((m) => m.legId)).toEqual(['b-same', 'c-same', 'd-pricier', 'a-more-miles']);
+  });
+
+  it('takes the no-budget price reference from every feasible leg, before the result cap', () => {
+    // 20 on-route legs at $1,000 fill the results; 21 cheaper 90-mile detours rank below the cap.
+    // The median over all 41 feasible legs is $100, so the shown legs score 0 on price.
+    const shown = Array.from({ length: MAX_RESULTS }, (_, i) =>
+      candidate({ id: `on-${String(i).padStart(2, '0')}`, priceAmount: 1_000 }),
+    );
+    const cut = Array.from({ length: 21 }, (_, i) =>
+      candidate({ id: `detour-${String(i).padStart(2, '0')}`, priceAmount: 100 }, detourOf(90)),
+    );
+    const infeasible = candidate({ id: 'reefer', trailerType: 'REEFER', priceAmount: 5_000 });
+    const ranked = rankTruckLegs(request(), [...cut, infeasible, ...shown]);
+    expect(ranked.map((m) => m.legId)).toEqual(shown.map((c) => c.leg.id));
+    expect(ranked.every((m) => m.breakdown.price === 0)).toBe(true);
+  });
+
+  it('applies custom weights deterministically', () => {
+    // No budget: median $750, so the on-route leg is dear (P ≈ 0.17) and the detour cheap (P ≈ 0.83).
+    const candidates = [
+      candidate({ id: 'on-route', priceAmount: 1_000 }),
+      candidate({ id: 'cheap-detour', priceAmount: 500 }, detourOf(60)),
+    ];
+    expect(rankTruckLegs(request(), candidates).map((m) => m.legId)).toEqual(['on-route', 'cheap-detour']);
+    const priceOnly = { routeEfficiency: 0, capacityFit: 0, price: 1, timing: 0 };
+    const ranked = rankTruckLegs(request(), candidates, priceOnly);
+    expect(ranked.map((m) => [m.legId, m.score])).toEqual([
+      ['cheap-detour', 83],
+      ['on-route', 17],
+    ]);
+    expect(rankTruckLegs(request(), [...candidates].reverse(), priceOnly)).toEqual(ranked);
   });
 
   it('is deterministic regardless of candidate order', () => {
