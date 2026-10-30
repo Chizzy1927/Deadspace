@@ -10,16 +10,16 @@ Trucks often run empty or partly loaded on legs they are already planning to dri
 
 ## 1. Tech stack
 
-| Layer       | Choice                                                                                                                 | Notes                                           |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| Monorepo    | npm workspaces                                                                                                         | No extra tooling                                |
-| Frontend    | React 19 + Vite, React Router, Tailwind, React Hook Form + Zod, TanStack Query                                         | SPA                                             |
-| Backend     | Node + Express 5 (TypeScript, `tsx` dev)                                                                               | Thin routes over services                       |
-| DB          | **PostgreSQL 17 + PostGIS 3** (`postgis/postgis` Docker image locally; Neon, which supports PostGIS, for deploy)       | Geospatial matching is a core domain capability |
-| ORM         | Prisma, with raw SQL (`$queryRaw`) only in the geo repository layer                                                    | See §4                                          |
-| Geocoding   | **Geoapify** behind a vendor-neutral `Geocoder` interface; `MockGeocoder` for tests and seeds                          | See §3                                          |
-| Testing     | Vitest (unit) + Supertest (API integration against a PostGIS test DB)                                                  |                                                 |
-| CI / deploy | GitHub Actions (lint, typecheck, test with a PostGIS service container); Vercel (web), Render/Railway (API), Neon (DB) |                                                 |
+| Layer       | Choice                                                                                                                 | Notes                                                                                                     |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Monorepo    | npm workspaces                                                                                                         | No extra tooling                                                                                          |
+| Frontend    | React 19 + Vite, React Router, Tailwind, React Hook Form + Zod, TanStack Query                                         | SPA                                                                                                       |
+| Backend     | Node + Express 5 (TypeScript; dev runs `node --watch --import tsx`)                                                    | Thin routes over services. Not `tsx watch`: on Windows it hangs when `concurrently` gives it a stdin pipe |
+| DB          | **PostgreSQL 17 + PostGIS 3** (`postgis/postgis` Docker image locally; Neon, which supports PostGIS, for deploy)       | Geospatial matching is a core domain capability                                                           |
+| ORM         | Prisma, with raw SQL (`$queryRaw`) only in the geo repository layer                                                    | See §4                                                                                                    |
+| Geocoding   | **Geoapify** behind a vendor-neutral `Geocoder` interface; `MockGeocoder` for tests and seeds                          | See §3                                                                                                    |
+| Testing     | Vitest (unit) + Supertest (API integration against a PostGIS test DB)                                                  |                                                                                                           |
+| CI / deploy | GitHub Actions (lint, typecheck, test with a PostGIS service container); Vercel (web), Render/Railway (API), Neon (DB) |                                                                                                           |
 
 ---
 
@@ -160,10 +160,10 @@ Notation: O = leg origin, X = leg destination, P = pickup, D = dropoff, d() = st
 
 1. Status ACTIVE; trailer types equal
 2. Spare capacity is sufficient: `totalPallets − committedPallets ≥ pallets` and the same for weight
-3. Time windows overlap: `departureEarliest ≤ pickupLatest` and `departureLatest ≥ pickupEarliest`
+3. Time windows overlap, **arrival-adjusted** (decided in Phase 2): shift the departure window by the est. drive time O→P (`d(O,P) × ROAD_FACTOR / AVG_SPEED_MPH`), then require `departureEarliest + drive ≤ pickupLatest` and `departureLatest + drive ≥ pickupEarliest`. This asks whether the truck can be at the pickup during the window; it equals the plain overlap when O ≈ P.
 4. Detour is within the carrier's limit: `detour = d(O,P) + d(P,D) + d(D,X) − d(O,X)`, with `detour × ROAD_FACTOR ≤ maxDetourMiles`
-5. Timing is feasible (only checked when `arriveBy` or `deliverBy` is set): the estimated time to drive the whole route O→P→D→X at `AVG_SPEED_MPH` (default 50), plus `HANDLING_HOURS` (default 2 per stop), must meet both deadlines
-6. Spatial pre-filter: `ST_DWithin(origin, pickup, maxDetour + buffer)`
+5. Timing is feasible (only checked when `arriveBy` or `deliverBy` is set; TS only): leave at `departureEarliest`, drive to P, wait for `pickupEarliest` if early, then `HANDLING_HOURS` (default 2) at each stop and `AVG_SPEED_MPH` (default 50) driving. Arrival at D must be ≤ `deliverBy`; arrival at X must be ≤ `arriveBy`.
+6. Spatial strategy (decided in Phase 2): the exact detour (rule 4) is computed in SQL with `ST_Distance` on the stored geography columns, after the B-tree-friendly filters. A radius pre-filter like `ST_DWithin(origin, pickup, maxDetour + buffer)` is **not valid**: a leg can pass straight through the pickup from far away (seeded Oklahoma City → Houston is ~190 mi from Dallas with a ~2 est. mi detour). So the detour step isn't GiST-assisted. That's fine at V1 volume; add a corridor index if listing volume requires it.
 
 **Metrics** (computed for every feasible match and shown on the card):
 
@@ -252,12 +252,12 @@ Each phase ends working, verified and committed.
 **Phase 2, transport vertical slice (end to end).**
 
 - `geo.repository.ts` candidate query, with straight-line distances computed in PostGIS
-- `matching/truck.ts` **v0**: all hard constraints plus a route-efficiency-only score, with unit tests
-- Endpoints for truck legs, transport requests and matches, plus an integration test (create request → get matches)
-- Minimal, functional UI: carrier truck-leg form, transport request form with LocationInput, and a matches page listing score and detour
+- `matching/truck.ts` **v0**: all hard constraints (including the deadline check) plus a route-efficiency-only score, with unit tests. Built ahead of Phase 3: the §5 metrics (additional, loaded, empty-recovered miles, utilisation, est. price), reasons, and EMPTY/PARTIAL handling. Ties go to fewer additional miles, then lower est. price, then leg id.
+- Endpoints for truck legs, transport requests and matches, plus `/geocode/search`, and integration tests (create request → get matches, seeded Dallas → Houston scenario)
+- Minimal, functional UI: transport request form with LocationInput, and a matches page with score, est. metrics and reasons. The carrier truck-leg form moved to Phase 3 (endpoints exist).
 - Exit criterion: a user can submit a transport request in the browser and see ranked, real matches from the database.
 
-**Phase 3, refine truck matching.** Full metrics (additional miles, empty miles recovered, utilisation, est. price), timing feasibility, the full weighted score from `config.ts`, reason generation, a ScoreBreakdown and metrics UI, "est." labelling and tooltip, and expanded unit tests (edge cases, tie-breaking, EMPTY vs. PARTIAL behaviour). Also polish the guided carrier form (trailer defaults, fill bar, detour slider).
+**Phase 3, refine truck matching.** The full weighted score from `config.ts` (capacity, price and timing components), a ScoreBreakdown UI, the "est." tooltip copy, and expanded unit tests. Metrics, reasons, timing feasibility and EMPTY/PARTIAL behaviour were already built in Phase 2. Also build and polish the guided carrier form (trailer defaults, fill bar, detour slider).
 
 - **Required follow-up (decided in the Phase 1 review; deliberately not built yet): route-efficiency normalisation.** The §5 formula `1 − estAdditionalMiles / maxDetourMiles` divides by the carrier's _own_ declared limit, so a higher limit inflates that leg's score (at 300, a 150-mile detour scores 0.5; at 100 the same leg is infeasible). In Phase 3, normalise against `min(maxDetourMiles, ROUTE_EFFICIENCY_REFERENCE_MILES)` from `matching/config.ts`, so a carrier's limit only widens feasibility and never boosts ranking. Add unit tests showing two legs with identical geometry but different `maxDetourMiles` get the same route-efficiency component (below the reference). Update this section's score table and `/how-matching-works` to match.
 

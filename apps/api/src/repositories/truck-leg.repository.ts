@@ -1,4 +1,4 @@
-import type { CreateTruckLegInput } from '@deadspace/shared';
+import type { CreateTruckLegInput, TruckLeg as TruckLegDto } from '@deadspace/shared';
 import type { PrismaClient } from '../db.js';
 import type { Prisma, TruckLeg } from '../generated/prisma/client.js';
 
@@ -18,4 +18,40 @@ export function toTruckLegCreateData(input: CreateTruckLegInput): Prisma.TruckLe
 
 export function createTruckLeg(prisma: PrismaClient, input: CreateTruckLegInput): Promise<TruckLeg> {
   return prisma.truckLeg.create({ data: toTruckLegCreateData(input) });
+}
+
+export function findTruckLegById(prisma: PrismaClient, id: string): Promise<TruckLeg | null> {
+  return prisma.truckLeg.findUnique({ where: { id } });
+}
+
+export function findTruckLegsByIds(prisma: PrismaClient, ids: readonly string[]): Promise<TruckLeg[]> {
+  return prisma.truckLeg.findMany({ where: { id: { in: [...ids] } } });
+}
+
+/** Row → API shape: locations regrouped, Decimal money as number, dates as ISO strings. */
+export function toTruckLegDto(row: TruckLeg): TruckLegDto {
+  return {
+    id: row.id,
+    status: row.status,
+    companyName: row.companyName,
+    contactName: row.contactName,
+    contactEmail: row.contactEmail,
+    origin: { label: row.originLabel, lat: row.originLat, lng: row.originLng },
+    destination: { label: row.destinationLabel, lat: row.destinationLat, lng: row.destinationLng },
+    departureEarliest: row.departureEarliest.toISOString(),
+    departureLatest: row.departureLatest.toISOString(),
+    arriveBy: row.arriveBy?.toISOString() ?? null,
+    loadState: row.loadState,
+    trailerType: row.trailerType,
+    totalPallets: row.totalPallets,
+    totalWeightLbs: row.totalWeightLbs,
+    committedPallets: row.committedPallets,
+    committedWeightLbs: row.committedWeightLbs,
+    maxDetourMiles: row.maxDetourMiles,
+    pricingBasis: row.pricingBasis,
+    priceAmount: row.priceAmount.toNumber(),
+    notes: row.notes,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }

@@ -1,18 +1,10 @@
 import { HealthResponseSchema } from '@deadspace/shared';
 import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
-import { createApp } from '../../src/app.js';
-import { loadEnv } from '../../src/config/env.js';
-import { createPrismaClient } from '../../src/db.js';
-import { getPostgisVersion } from '../../src/repositories/geo.repository.js';
-import { createDatabaseHealthCheck } from '../../src/services/health.service.js';
+import { createTestApp, createTestPrisma } from './helpers.js';
 
-const env = loadEnv();
-const prisma = createPrismaClient(env.DATABASE_URL);
-const app = createApp({
-  webOrigin: env.WEB_ORIGIN,
-  checkDatabase: createDatabaseHealthCheck(() => getPostgisVersion(prisma)),
-});
+const prisma = createTestPrisma();
+const app = createTestApp(prisma);
 
 afterAll(async () => {
   await prisma.$disconnect();

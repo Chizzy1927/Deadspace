@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 import { loadEnv } from './config/env.js';
 import { createPrismaClient } from './db.js';
+import { createGeocoder } from './geocoding/index.js';
 import { getPostgisVersion } from './repositories/geo.repository.js';
 import { createDatabaseHealthCheck } from './services/health.service.js';
 
@@ -10,6 +11,8 @@ const prisma = createPrismaClient(env.DATABASE_URL);
 const app = createApp({
   webOrigin: env.WEB_ORIGIN,
   checkDatabase: createDatabaseHealthCheck(() => getPostgisVersion(prisma)),
+  prisma,
+  geocoder: createGeocoder(env, prisma),
 });
 
 const server = app.listen(env.PORT, () => {

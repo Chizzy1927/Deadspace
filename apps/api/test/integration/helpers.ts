@@ -6,12 +6,26 @@ import {
   CreateTransportRequestInputSchema,
   CreateTruckLegInputSchema,
 } from '@deadspace/shared';
+import { createApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
-import { createPrismaClient } from '../../src/db.js';
+import { createPrismaClient, type PrismaClient } from '../../src/db.js';
+import { MockGeocoder } from '../../src/geocoding/mock.js';
+import { getPostgisVersion } from '../../src/repositories/geo.repository.js';
+import { createDatabaseHealthCheck } from '../../src/services/health.service.js';
 
 /** Prisma client for the *_test database (vitest.integration.config sets DATABASE_URL). */
 export function createTestPrisma() {
   return createPrismaClient(loadEnv().DATABASE_URL);
+}
+
+/** The real app wired to the test database, with the offline MockGeocoder. */
+export function createTestApp(prisma: PrismaClient) {
+  return createApp({
+    webOrigin: loadEnv().WEB_ORIGIN,
+    checkDatabase: createDatabaseHealthCheck(() => getPostgisVersion(prisma)),
+    prisma,
+    geocoder: new MockGeocoder(),
+  });
 }
 
 export const DALLAS = { label: 'Dallas, TX, United States', lat: 32.7767, lng: -96.797 };
