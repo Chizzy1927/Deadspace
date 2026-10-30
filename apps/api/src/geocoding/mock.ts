@@ -37,6 +37,13 @@ const FIXTURES: readonly (readonly [city: string, state: string, lat: number, ln
   ['Albuquerque', 'NM', 35.0844, -106.6504],
   ['Phoenix', 'AZ', 33.4484, -112.074],
   ['Chicago', 'IL', 41.8781, -87.6298],
+  // Dallas suburbs (appended so earlier search results keep their order): give the warehouse seed
+  // and tests sites at varied distances inside a typical storage search radius.
+  ['Irving', 'TX', 32.814, -96.9489],
+  ['Lancaster', 'TX', 32.5921, -96.7561],
+  ['Plano', 'TX', 33.0198, -96.6989],
+  ['Arlington', 'TX', 32.7357, -97.1081],
+  ['Denton', 'TX', 33.2148, -97.1331],
 ];
 
 export const MOCK_PLACES: readonly Place[] = FIXTURES.map(([city, state, lat, lng]) => ({

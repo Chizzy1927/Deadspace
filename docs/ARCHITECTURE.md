@@ -108,7 +108,7 @@ Each record has `id` (cuid), `companyName`, `contactName`, `contactEmail`, `stat
 
 **Generated-column migration rules.** Prisma has no generated-column support: it introspects the generation expression as a column default, so each `*Geog` field is declared `Unsupported("geography(Point,4326)")? @default(dbgenerated("…"))` with the expression exactly as Postgres formats it (Prisma compares the text literally). Unsupported fields are absent from the Prisma client, so app code can't write them. Any migration that adds a `*Geog` column or touches its lat/lng sources must be hand-edited: new columns as `GENERATED ALWAYS AS (…) STORED`, renames as `RENAME COLUMN` (never Prisma's drop + add), expression changes as `ALTER COLUMN … SET EXPRESSION AS (…)` (Postgres 17+). Copy the `dbgenerated` string from `prisma db pull --print`; never retype it. Prisma's generated SQL for these cases fails loudly rather than silently (Postgres rejects it). `npm run db:drift` (run in CI against a freshly migrated database) fails if the schema and the migrations disagree.
 
-**Enums:** `TrailerType` (DRY_VAN, REEFER, FLATBED) · `LoadState` (EMPTY, PARTIAL) · `TruckPricingBasis` (FLAT, PER_LOADED_MILE) · `StorageUnit` (PALLET_POSITION, FLOOR_SQFT) · `PricingPeriod` (DAY, WEEK, MONTH) · `Status`.
+**Enums:** `TrailerType` (DRY_VAN, REEFER, FLATBED) · `LoadState` (EMPTY, PARTIAL) · `TruckPricingBasis` (FLAT, PER_LOADED_MILE) · `StoragePricingPeriod` (DAY, WEEK, MONTH) · `Status`. Pallet positions are the only V1 storage unit, so there is no unit enum (decided in Phase 4).
 
 **TruckLeg** (stranded truck capacity: a movement the carrier is already planning)
 
@@ -126,25 +126,29 @@ Each record has `id` (cuid), `companyName`, `contactName`, `contactEmail`, `stat
 - pickup*, dropoff* (at least 10 straight-line miles apart, same policy), pickupEarliest, pickupLatest, deliverBy?
 - trailerType, pallets, weightLbs, maxBudget?; notes
 
-**WarehouseSpace** (genuinely idle capacity)
+**WarehouseSpace** (genuinely idle capacity: a bounded block of pallet positions free for a known window)
 
 - location*
-- unit, quantityAvailable, minQuantity? (smallest block the provider will rent)
-- availableFrom, availableTo, minStorageDays (default 1)
-- pricingPeriod, pricePerUnitPerPeriod, handlingFeePerUnit? (in/out)
-- temperatureControlled, foodGrade, hazmatCertified; notes
+- quantityAvailable (pallet positions), minPallets? (smallest block the operator will rent)
+- availableFrom, availableTo (calendar dates), minStorageDays (default 1)
+- pricingPeriod (DAY/WEEK/MONTH), pricePerPalletPerPeriod, handlingFeePerPallet? (one combined in-and-out fee per pallet)
+- temperatureControlled, foodGrade (self-declared by the operator, not verified); notes
 
 **StorageRequest**
 
-- location*, maxDistanceMiles (default 50)
-- unit, quantity, startDate, endDate
-- needsTemperatureControl, needsFoodGrade, needsHazmat, maxBudgetTotal?; notes
+- location*, maxDistanceMiles (default 25, at most 250; est. road miles; a hard limit only, never a ranking input)
+- pallets, startDate, endDate (calendar dates)
+- needsTemperatureControl, needsFoodGrade, maxBudgetTotal?; notes
+
+**Storage dates (decided in Phase 4).** Dates are calendar days (`DATE` columns, `YYYY-MM-DD` on the wire, UTC midnights in code), so day arithmetic is exact. `endDate` is the move-out day and stay length = `endDate − startDate` days (at least 1). `availableTo` is the last day goods may be on site, so the longest stay a listing can hold is `availableTo − availableFrom` days. "Today" is the UTC day, with one day of tolerance for users west of UTC.
+
+**Storage policy.** `STORAGE_POLICY` in `packages/shared` holds V1 product-policy defaults (tunable; not universal warehouse-domain truths), shared by form and API: an availability window of at most 180 days and a stay of at most 180 days, both starting within 90 days (a marketplace policy for near-term stranded capacity); `minStorageDays` no longer than the window; `minPallets ≤ quantityAvailable`. The bounded window is the warehouse counterpart of the truck guards: a listing is a specific block of idle space, not a permanent facility entry. Floor sqft, hazmat and temperature ranges are deferred.
 
 **GeocodeCache:** one row per result: provider, normalizedQuery, rank, label, lat, lng, createdAt; unique `(provider, normalizedQuery, rank)` so autocomplete lists are served whole and switching geocoders never serves another provider's results. Empty results aren't cached; no expiry in V1.
 
 Money columns (`priceAmount`, `maxBudget`, …) are `Decimal(10,2)`; repositories convert to `number` at the API boundary. Timestamps are `timestamptz`. Integration tests run against a separate `*_test` database.
 
-Plain B-tree indexes on `(status, trailerType, departureEarliest)` and `(status, unit, availableFrom)`; GiST indexes on all geography columns. Later, a nullable `ownerId` foreign key can be added when auth arrives.
+Plain B-tree indexes on `(status, trailerType, departureEarliest)` and `(status, availableFrom)`; GiST indexes on all geography columns. Later, a nullable `ownerId` foreign key can be added when auth arrives.
 
 ---
 

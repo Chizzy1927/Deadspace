@@ -1,9 +1,19 @@
 import { straightLineMiles } from '@deadspace/shared';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { getTruckLegGeography } from '../../src/repositories/geo.repository.js';
+import { createStorageRequest } from '../../src/repositories/storage-request.repository.js';
 import { createTransportRequest } from '../../src/repositories/transport-request.repository.js';
 import { createTruckLeg } from '../../src/repositories/truck-leg.repository.js';
-import { createTestPrisma, DALLAS, HOUSTON, transportRequestInput, truckLegInput } from './helpers.js';
+import { createWarehouseSpace } from '../../src/repositories/warehouse-space.repository.js';
+import {
+  createTestPrisma,
+  DALLAS,
+  HOUSTON,
+  storageRequestInput,
+  transportRequestInput,
+  truckLegInput,
+  warehouseSpaceInput,
+} from './helpers.js';
 
 const prisma = createTestPrisma();
 
@@ -12,11 +22,15 @@ const GEOG_COLUMNS = [
   ['TruckLeg', 'destinationGeog'],
   ['TransportRequest', 'pickupGeog'],
   ['TransportRequest', 'dropoffGeog'],
+  ['WarehouseSpace', 'locationGeog'],
+  ['StorageRequest', 'locationGeog'],
 ] as const;
 
 beforeEach(async () => {
   await prisma.truckLeg.deleteMany();
   await prisma.transportRequest.deleteMany();
+  await prisma.warehouseSpace.deleteMany();
+  await prisma.storageRequest.deleteMany();
 });
 
 afterAll(async () => {
@@ -87,6 +101,34 @@ describe('generated geography columns', () => {
       FROM "TransportRequest" WHERE id = ${req.id}`;
     expect(rows).toEqual([{ pickupSet: true, dropoffSet: true }]);
   });
+
+  it('derives warehouse-space and storage-request points from lat/lng, and recomputes on update', async () => {
+    const space = await createWarehouseSpace(prisma, warehouseSpaceInput());
+    const request = await createStorageRequest(prisma, storageRequestInput({ location: HOUSTON }));
+    // Verification query (reads the generated columns back); app spatial SQL lives in geo.repository.ts.
+    const points = () => prisma.$queryRaw<{ table: string; lat: number; lng: number }[]>`
+      SELECT 'WarehouseSpace' AS "table", ST_Y("locationGeog"::geometry) AS lat, ST_X("locationGeog"::geometry) AS lng
+      FROM "WarehouseSpace" WHERE id = ${space.id}
+      UNION ALL
+      SELECT 'StorageRequest', ST_Y("locationGeog"::geometry), ST_X("locationGeog"::geometry)
+      FROM "StorageRequest" WHERE id = ${request.id}
+      ORDER BY 1 DESC`;
+
+    const [ws, sr] = await points();
+    expect(ws).toMatchObject({ table: 'WarehouseSpace' });
+    expect(ws?.lat).toBeCloseTo(DALLAS.lat, 9);
+    expect(ws?.lng).toBeCloseTo(DALLAS.lng, 9);
+    expect(sr?.lat).toBeCloseTo(HOUSTON.lat, 9);
+    expect(sr?.lng).toBeCloseTo(HOUSTON.lng, 9);
+
+    await prisma.warehouseSpace.update({
+      where: { id: space.id },
+      data: { locationLat: 32.7555, locationLng: -97.3308 },
+    });
+    const [moved] = await points();
+    expect(moved?.lat).toBeCloseTo(32.7555, 9);
+    expect(moved?.lng).toBeCloseTo(-97.3308, 9);
+  });
 });
 
 describe('schema catalog', () => {
@@ -105,13 +147,32 @@ describe('schema catalog', () => {
     }
   });
 
-  it('has a GiST index on every geography column and the truck-leg filter index', async () => {
+  it('has a GiST index on every geography column and the truck-leg and warehouse filter indexes', async () => {
     const indexes = await prisma.$queryRaw<{ table: string; def: string }[]>`
       SELECT tablename AS "table", indexdef AS def FROM pg_indexes
-      WHERE schemaname = 'public' AND tablename IN ('TruckLeg', 'TransportRequest')`;
+      WHERE schemaname = 'public'
+        AND tablename IN ('TruckLeg', 'TransportRequest', 'WarehouseSpace', 'StorageRequest')`;
     for (const [table, column] of GEOG_COLUMNS) {
       expect(indexes.some((i) => i.table === table && i.def.includes(`USING gist ("${column}")`))).toBe(true);
     }
     expect(indexes.some((i) => i.def.includes('USING btree (status, "trailerType", "departureEarliest")'))).toBe(true);
+    expect(
+      indexes.some((i) => i.table === 'WarehouseSpace' && i.def.includes('USING btree (status, "availableFrom")')),
+    ).toBe(true);
+  });
+
+  it('stores storage dates as calendar DATE columns', async () => {
+    const rows = await prisma.$queryRaw<{ table: string; column: string; type: string }[]>`
+      SELECT table_name AS "table", column_name AS "column", data_type AS type
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND column_name IN ('availableFrom', 'availableTo', 'startDate', 'endDate')
+      ORDER BY 1, 2`;
+    expect(rows).toEqual([
+      { table: 'StorageRequest', column: 'endDate', type: 'date' },
+      { table: 'StorageRequest', column: 'startDate', type: 'date' },
+      { table: 'WarehouseSpace', column: 'availableFrom', type: 'date' },
+      { table: 'WarehouseSpace', column: 'availableTo', type: 'date' },
+    ]);
   });
 });
