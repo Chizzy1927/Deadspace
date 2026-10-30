@@ -14,6 +14,7 @@ import {
   utcStartOfDay,
   withCrossFieldRules,
 } from './common.js';
+import { MAX_MATCH_HIGHLIGHTS } from './transport.js';
 
 /** Billing period a warehouse quotes its per-pallet price in. */
 export const StoragePricingPeriod = z.enum(['DAY', 'WEEK', 'MONTH']);
@@ -192,3 +193,96 @@ export const StorageRequestSchema = ContactSchema.extend({
   notes: z.string().nullable(),
 });
 export type StorageRequest = z.infer<typeof StorageRequestSchema>;
+
+/**
+ * Metrics for one feasible warehouse match. Every `est*` value is an estimate (distance: straight
+ * line × road factor; cost: the quoted rate prorated by day) and must be labelled "est." in the UI.
+ */
+export const StorageMatchMetricsSchema = z.object({
+  /** Est. road miles from the shipper's location to the warehouse. */
+  estDistanceMiles: z.number(),
+  /** Requested stay, endDate − startDate. */
+  stayDays: z.number().int(),
+  /** Days the listing stays available after the move-out day (availableTo − endDate). */
+  daysAfterEnd: z.number().int(),
+  /** Share (0–1) of the listing's free pallet positions the request takes. */
+  availableSpaceUsed: z.number().min(0).max(1),
+  /** Days in the listing's pricing period used to prorate its rate (DAY 1, WEEK 7, MONTH 30). */
+  pricingPeriodDays: z.number().int(),
+  /** USD: rate × pallets × stayDays / pricingPeriodDays. */
+  estStorageCost: z.number(),
+  /** USD: combined in-and-out handling fee × pallets (0 when the listing has none). */
+  estHandlingCost: z.number(),
+  /** USD: estStorageCost + estHandlingCost. */
+  estTotalCost: z.number(),
+  /** What the cost was scored against: the shipper's budget, or the median est. total cost of feasible matches. */
+  priceReference: z.object({ basis: z.enum(['BUDGET', 'MATCH_MEDIAN']), amount: z.number() }),
+});
+export type StorageMatchMetrics = z.infer<typeof StorageMatchMetricsSchema>;
+
+const ScoreComponent = z.number().min(0).max(1);
+
+/** Score components, each 0–1; score = round(100 × Σ weight × component). */
+export const StorageScoreBreakdownSchema = z.object({
+  location: ScoreComponent,
+  price: ScoreComponent,
+  capacityFit: ScoreComponent,
+  roomToExtend: ScoreComponent,
+});
+export type StorageScoreBreakdown = z.infer<typeof StorageScoreBreakdownSchema>;
+
+/**
+ * The scoring model a set of matches was ranked with (weights and fixed references), so the UI can
+ * explain a score without restating the formulas. Tunable V1 defaults, not optimal values.
+ */
+export const StorageScoringSchema = z.object({
+  weights: StorageScoreBreakdownSchema,
+  /** Est. miles at which the location component reaches 0. */
+  locationReferenceMiles: z.number(),
+  /** Days after move-out that earn full room-to-extend credit. */
+  extensionFullCreditDays: z.number(),
+  /** Cost / reference ratio at which the price component reaches 0 (0.5 at the reference). */
+  priceZeroScoreRatio: z.number(),
+});
+export type StorageScoring = z.infer<typeof StorageScoringSchema>;
+
+/** Stable machine-readable codes for deterministic storage-match highlights. */
+export const StorageMatchHighlightCode = z.enum([
+  'NEARBY',
+  'NEAR_EDGE_OF_RADIUS',
+  'UNDER_BUDGET',
+  'OVER_BUDGET',
+  'BELOW_TYPICAL_PRICE',
+  'ROOM_TO_EXTEND',
+  'NO_ROOM_TO_EXTEND',
+]);
+export type StorageMatchHighlightCode = z.infer<typeof StorageMatchHighlightCode>;
+
+/** A short, rule-derived note on what stands out about a storage match. Caution notes come first. */
+export const StorageMatchHighlightSchema = z.object({
+  code: StorageMatchHighlightCode,
+  tone: z.enum(['positive', 'caution']),
+  text: z.string(),
+});
+export type StorageMatchHighlight = z.infer<typeof StorageMatchHighlightSchema>;
+
+/** One ranked warehouse match for a storage request. */
+export const StorageMatchSchema = z.object({
+  space: WarehouseSpaceSchema,
+  /** 0–100. */
+  score: z.number().int().min(0).max(100),
+  breakdown: StorageScoreBreakdownSchema,
+  metrics: StorageMatchMetricsSchema,
+  /** At most MAX_MATCH_HIGHLIGHTS; distinct from `reasons`, which explain every dimension. */
+  highlights: z.array(StorageMatchHighlightSchema).max(MAX_MATCH_HIGHLIGHTS),
+  reasons: z.array(z.string()),
+});
+export type StorageMatch = z.infer<typeof StorageMatchSchema>;
+
+/** GET /api/storage-requests/:id/matches. */
+export const StorageMatchesResponseSchema = z.object({
+  request: StorageRequestSchema,
+  scoring: StorageScoringSchema,
+  matches: z.array(StorageMatchSchema),
+});
+export type StorageMatchesResponse = z.infer<typeof StorageMatchesResponseSchema>;

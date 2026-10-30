@@ -82,7 +82,7 @@ apps/api/src
 
 **Matching pipeline** (computed on demand; no stored matches in V1):
 
-1. **PostGIS candidate query** (`geo.repository.ts`): applies the cheap hard filters in SQL (status, trailer type or storage unit, capacity, date overlap, and a spatial pre-filter via `ST_DWithin` on GiST-indexed `geography` columns). It **returns the straight-line distances the scorer needs**, computed with `ST_Distance`.
+1. **PostGIS candidate query** (`geo.repository.ts`): applies the cheap hard filters in SQL (trucks: status, trailer type, spare capacity, the pickup window and the exact detour; warehouses: status and the search radius only, using a GiST-assisted `ST_DWithin` pre-filter). It **returns the straight-line distances the scorer needs**, computed with `ST_Distance`.
 2. **Pure matching functions** (`matching/`): take a request plus candidates with precomputed distances, then apply the exact feasibility checks, compute metrics, score, rank and generate reasons. PostGIS does the spatial work and TypeScript does the readable logic, so the algorithm can be read top to bottom in one file. It's unit-tested with plain objects and needs no database.
 
 ### API endpoints (`/api`)
@@ -196,13 +196,34 @@ Ties are broken by fewer additional miles, then lower est. price, then leg id. R
 
 ### Warehouse space ↔ Storage request
 
-**Hard constraints:** status ACTIVE; units equal; `quantityAvailable ≥ quantity ≥ (minQuantity ?? 0)`; window coverage (`availableFrom ≤ startDate` and `availableTo ≥ endDate`); `duration ≥ minStorageDays`; required features are a subset of the listing's features; `ST_DWithin(location, requestLocation, maxDistanceMiles)`.
+Rewritten in Phase 4 (`matching/warehouse.ts`). It's a separate domain from trucks: there's no route or detour, just a fixed site, a radius, date coverage, pallet positions and a billing period. Only the price comparison (`matching/price.ts`) is shared. Dates follow §4: `stayDays = endDate − startDate` and `daysAfterEnd = availableTo − endDate`. Est. distance = PostGIS straight-line miles × `ROAD_FACTOR`.
 
-**Metrics:** est. distance (est. road miles); est. total cost = `pricePerUnitPerPeriod × quantity × periods(duration, pricingPeriod)` plus handling fees on the way in and out; idle space filled = `quantity / quantityAvailable`.
+**Hard constraints** (each with a rejection code; the TS matcher is the authority):
 
-**Score defaults:** Location 0.35 (`1 − distance / maxDistanceMiles`) · Price 0.35 (vs. maxBudgetTotal, same formula as trucks) · Utilisation 0.15 · Date fit 0.15 (decays with idle lead time between availableFrom and startDate).
+1. `INACTIVE`: status is ACTIVE
+2. `TOO_FAR`: est. distance ≤ `maxDistanceMiles` (inclusive)
+3. `WINDOW_NOT_COVERED`: full coverage, `availableFrom ≤ startDate` and `endDate ≤ availableTo` (moving out on the listing's last day is fine; a day either side is not)
+4. `INSUFFICIENT_PALLETS`: `pallets ≤ quantityAvailable`
+5. `BELOW_MIN_PALLETS`: `pallets ≥ minPallets` when set
+6. `BELOW_MIN_DURATION`: `stayDays ≥ minStorageDays`
+7. `MISSING_TEMPERATURE_CONTROL` / `MISSING_FOOD_GRADE`: required features ⊆ listing features (extra features are fine)
 
-**Match output:** `{ listing, score, breakdown, metrics, reasons[] }`. Reasons are generated from the metrics, for example "Adds ~38 est. mi to the carrier's planned trip", "Puts ~210 est. empty miles to use", or "Trailer goes from 40% → 85% full".
+**Candidate query** (`findWarehouseCandidates`): SQL applies only rules 1–2 and returns `ST_Distance` straight-line miles. The radius test is the same expression as rule 2 (`miles × ROAD_FACTOR ≤ maxDistanceMiles`) on the same float8 value the matcher receives, so SQL and TS agree exactly at the boundary (integration-tested to 1 cm either side). `ST_DWithin`, widened by 1 m, is only the index pre-filter. Rules 3–7 stay in the matcher so feasibility has one authority. Integration tests check SQL/TS parity, and that PostGIS distances agree with the haversine helper within 0.5% (ellipsoid vs. sphere).
+
+**Est. cost** (comparison estimate, labelled "est."): `estStorageCost = pricePerPalletPerPeriod × pallets × stayDays / periodDays` (DAY 1, WEEK 7, MONTH 30). This is prorated by day, with no rounding up to whole periods and no minimum charge. `estHandlingCost = handlingFeePerPallet × pallets` (one combined in-and-out fee, independent of stay length; 0 if none). `estTotalCost` = their sum. Each is rounded to cents. A month counts as 30 days. These are V1 comparison conventions, not a claim about how an operator invoices.
+
+**Score** (0–100 = round(100 × Σ weight × component); tunable V1 defaults in `config.ts`, not optimal values):
+
+| Component      | Weight | Formula (0–1)                                                                                                                                                                                                                           |
+| -------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Location       | 0.35   | `clamp(1 − estDistanceMiles / LOCATION_REFERENCE_MILES)` (50): 1 at 0 mi, 0.5 at 25, 0 at 50+. A fixed reference, so the shipper's radius only decides feasibility and widening it never changes an existing candidate's location score |
+| Price          | 0.35   | Same as trucks: `clamp(1.5 − estTotalCost / reference)`. Reference = `maxBudgetTotal` if set, else the median est. total cost of all feasible matches (before the cap)                                                                  |
+| Capacity fit   | 0.15   | `pallets / quantityAvailable`, the share of the operator's **free** positions the request takes. The site's other occupancy isn't modelled, so it can't count                                                                           |
+| Room to extend | 0.15   | `clamp(daysAfterEnd / EXTENSION_FULL_CREDIT_DAYS)` (14): 0 when availability ends on the move-out day, 1 from 14 days on, with no extra credit beyond that                                                                              |
+
+Without a budget, the median reference is relative to the feasible set, so adding feasible candidates (e.g. by widening the radius) can change existing price scores. This is intended. A budget reference never changes. Ties go to the higher score, then the nearer site (unrounded est. distance), then the lower est. total cost, then the space id. Results are capped at 20.
+
+**Match output** (`StorageMatchSchema`): `{ space, score, breakdown, metrics, highlights, reasons }`. The metrics are `estDistanceMiles`, `stayDays`, `daysAfterEnd`, `availableSpaceUsed`, `pricingPeriodDays`, `estStorageCost`, `estHandlingCost`, `estTotalCost` and `priceReference {basis: BUDGET | MATCH_MEDIAN, amount}`. The matches response also carries `scoring`: the weights, the 50 mi and 14-day references and the price ratio, so the UI can explain a ranking without re-implementing it. Highlights (≤ 2, cautions first, presentation only, thresholds in `STORAGE_HIGHLIGHT_THRESHOLDS`) are `NEARBY` (≤ 10 est. mi), `NEAR_EDGE_OF_RADIUS` (≥ 90% of the shipper's radius, unless nearby; a configurable V1 presentation heuristic, not a domain truth), `UNDER_BUDGET`, `OVER_BUDGET`, `BELOW_TYPICAL_PRICE` (≥ 3 matches), `ROOM_TO_EXTEND` (≥ 14 days) and `NO_ROOM_TO_EXTEND` (0 days). Reasons come in a fixed order: location, dates, space, required features (marked as self-declared), and price.
 
 ---
 
