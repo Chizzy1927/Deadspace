@@ -10,13 +10,16 @@ Keep output in context lean: capture the relevant error excerpt, not entire logs
 
 ## 1. Scope the change
 
-- `git status --porcelain` and `git diff --stat HEAD` (include untracked files).
+- Diff base `BASE`: `HEAD` by default. If invoked with a base ref (e.g. `/verify origin/main`), use
+  `BASE=$(git merge-base <ref> HEAD)` so scope covers every branch commit since `<ref>` plus
+  working-tree changes. Name the base used in the report.
+- `git status --porcelain` and `git diff --stat $BASE` (include untracked files).
 - Classify affected areas: `packages/shared` (affects web + api), `apps/api`, `apps/web`,
   `apps/api/prisma` (schema/migrations), `apps/api/src/matching`, `.github/`.
 
 ## 2. Test-integrity review (read the diff, don't just grep)
 
-Inspect `git diff HEAD -- '**/*.test.ts' '**/*.test.tsx' '**/vitest.config.*' 'apps/api/src/matching/config.ts'` and flag:
+Inspect `git diff $BASE -- '**/*.test.ts' '**/*.test.tsx' '**/vitest.config.*' 'apps/api/src/matching/config.ts'` and flag:
 
 - removed or emptied tests, removed `expect(...)` lines, loosened matchers
   (e.g. `toBe` → `toBeDefined`, widened tolerances), changed expected values
