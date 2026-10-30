@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import { ApiError } from '../api/client';
 import { fetchTransportMatches } from '../api/transport';
+import { Est, EstimateNote } from '../components/Estimate';
 import { MatchCard } from '../components/MatchCard';
 import { formatDateTime, formatUsd, formatWindow, TRAILER_LABELS } from '../format';
 
@@ -66,7 +67,8 @@ export function TransportMatchesPage() {
         <>
           <p className="text-sm text-slate-600">
             {matches.length} matching {matches.length === 1 ? 'truck' : 'trucks'}, ranked by how little extra driving
-            your shipment adds to a trip the carrier is already making. Mileages and prices are estimates.
+            your shipment adds to a trip the carrier is already making. Values marked <Est /> are estimates (see the
+            note below).
           </p>
           <ol className="space-y-4">
             {matches.map((match, i) => (
@@ -75,6 +77,7 @@ export function TransportMatchesPage() {
               </li>
             ))}
           </ol>
+          <EstimateNote />
         </>
       )}
     </section>

@@ -1,6 +1,6 @@
 import type { Location } from '@deadspace/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useId, useState } from 'react';
+import { type Ref, useEffect, useId, useState } from 'react';
 import { searchPlaces } from '../api/geocode';
 
 interface LocationInputProps {
@@ -9,13 +9,15 @@ interface LocationInputProps {
   onChange: (value: Location | null) => void;
   onBlur?: () => void;
   error?: string | undefined;
+  /** Lets react-hook-form focus this input when its field has an error. */
+  ref?: Ref<HTMLInputElement>;
 }
 
 const MIN_QUERY_LENGTH = 2;
 const DEBOUNCE_MS = 250;
 
 /** Free-text place search via the API's geocoder proxy. Only a picked suggestion counts as a value. */
-export function LocationInput({ label, value, onChange, onBlur, error }: LocationInputProps) {
+export function LocationInput({ label, value, onChange, onBlur, error, ref }: LocationInputProps) {
   const id = useId();
   const [text, setText] = useState(value?.label ?? '');
   const [query, setQuery] = useState('');
@@ -41,6 +43,7 @@ export function LocationInput({ label, value, onChange, onBlur, error }: Locatio
         {label}
       </label>
       <input
+        ref={ref}
         id={id}
         type="text"
         role="combobox"

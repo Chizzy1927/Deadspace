@@ -7,6 +7,8 @@ import {
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { MockGeocoder } from '../../src/geocoding/mock.js';
+import { TRUCK_SCORE_WEIGHTS } from '../../src/matching/config.js';
+import { weightedScore } from '../../src/matching/truck-score.js';
 import { createTruckLeg, toTruckLegCreateData } from '../../src/repositories/truck-leg.repository.js';
 import { buildSeedTruckLegs, defaultSeedAnchor } from '../../prisma/seed-data/truck-legs.js';
 import { createTestApp, createTestPrisma, DALLAS, HOUSTON, truckLegInput } from './helpers.js';
@@ -103,6 +105,66 @@ describe('truck legs API (real PostGIS)', () => {
     expect(TruckLegSchema.parse(fetched.body)).toEqual(leg);
     expect((await request(app).get('/api/truck-legs/nope')).status).toBe(404);
   });
+
+  /** A carrier-form PARTIAL leg payload (committed values, arrive-by, notes, per-mile pricing). */
+  const partialLegPayload = (overrides: Record<string, unknown> = {}) => ({
+    companyName: 'Lone Star Freight',
+    contactName: 'Ana Ruiz',
+    contactEmail: 'ana@lonestar.example.com',
+    origin: DALLAS,
+    destination: HOUSTON,
+    departureEarliest: hoursFromNow(24),
+    departureLatest: hoursFromNow(30),
+    arriveBy: hoursFromNow(40),
+    loadState: 'PARTIAL',
+    trailerType: 'DRY_VAN',
+    totalPallets: 26,
+    totalWeightLbs: 45_000,
+    committedPallets: 14,
+    committedWeightLbs: 23_000,
+    maxDetourMiles: 45,
+    pricingBasis: 'PER_LOADED_MILE',
+    priceAmount: 2.35,
+    notes: 'Dock 4',
+    ...overrides,
+  });
+
+  it('persists every carrier-form field of a PARTIAL leg and serves it back', async () => {
+    const payload = partialLegPayload();
+    const created = await request(app).post('/api/truck-legs').send(payload);
+
+    expect(created.status).toBe(201);
+    const leg = TruckLegSchema.parse(created.body);
+    expect(leg).toMatchObject({
+      origin: DALLAS,
+      destination: HOUSTON,
+      loadState: 'PARTIAL',
+      committedPallets: 14,
+      committedWeightLbs: 23_000,
+      maxDetourMiles: 45,
+      pricingBasis: 'PER_LOADED_MILE',
+      priceAmount: 2.35,
+      notes: 'Dock 4',
+    });
+    expect(new Date(leg.arriveBy ?? '').toISOString()).toBe(payload.arriveBy);
+    const fetched = await request(app).get(`/api/truck-legs/${leg.id}`);
+    expect(TruckLegSchema.parse(fetched.body)).toEqual(leg);
+  });
+
+  it('rejects an invalid leg with per-field details the form can map, and stores nothing', async () => {
+    const res = await request(app)
+      .post('/api/truck-legs')
+      .send(partialLegPayload({ committedPallets: 26, departureLatest: hoursFromNow(24 + 73) }));
+
+    expect(res.status).toBe(400);
+    const { error } = ApiErrorResponseSchema.parse(res.body);
+    expect(error.code).toBe('VALIDATION_ERROR');
+    expect(error.details).toEqual([
+      { path: 'departureLatest', message: 'Departure window must be at most 72 hours' },
+      { path: 'committedPallets', message: 'Committed pallets must be less than total pallets' },
+    ]);
+    expect(await prisma.truckLeg.count()).toBe(0);
+  });
 });
 
 describe('create request → get matches (real PostGIS)', () => {
@@ -132,22 +194,38 @@ describe('create request → get matches (real PostGIS)', () => {
     expect(matches.map((m) => m.leg.id)).toEqual([onRoute.id, fortWorth.id, beaumont.id]);
 
     const [first, second, third] = matches;
-    expect(first?.score).toBe(100);
+    // Phase 3 weighted score (Phase 2 scored route efficiency alone: 100). On-route R = 1; 6 of 26
+    // spare pallets; $650 against the $700 budget; ≥ 4 h slack: 55 + 3.46 + 8.57 + 15 = 82.03.
+    expect(first?.breakdown).toEqual({ routeEfficiency: 1, capacityFit: 6 / 26, price: 1.5 - 650 / 700, timing: 1 });
+    expect(first?.score).toBe(82);
     expect(first?.metrics.estAdditionalMiles).toBe(0);
     expect(first?.metrics.estEmptyMilesRecovered).toBe(first?.metrics.estLoadedMiles);
     expect(first?.reasons).toContain('Est. price $650 (flat rate), within your $700 budget');
 
     expect(second?.metrics.estAdditionalMiles).toBeGreaterThan(15);
     expect(second?.metrics.estAdditionalMiles).toBeLessThan(30);
-    // V0: score is route efficiency alone, 1 − est. additional miles / 100-mile limit.
-    // (metrics are rounded to 0.1 mi for output, so compare the breakdown approximately.)
+    // Route efficiency is 1 − est. additional miles / the fixed 100-mile reference (metrics are
+    // rounded to 0.1 mi for output, so compare approximately), and the score is the weighted sum.
     expect(second?.breakdown.routeEfficiency).toBeCloseTo(1 - (second?.metrics.estAdditionalMiles ?? 0) / 100, 3);
-    expect(second?.score).toBe(Math.round(100 * (second?.breakdown.routeEfficiency ?? 0)));
+    expect(second?.score).toBe(second && weightedScore(second.breakdown, TRUCK_SCORE_WEIGHTS));
 
     expect(third?.metrics.estEmptyMilesRecovered).toBeNull();
     expect(third?.metrics.palletUtilisation).toEqual({ before: 10 / 26, after: 16 / 26 });
     expect(third?.metrics.estPrice).toBeCloseTo(2.75 * (third?.metrics.estLoadedMiles ?? 0), 0);
     expect(third?.reasons.join('\n')).toMatch(/over your \$700 budget/);
+
+    // Presentation fields: budget is the price reference; highlights follow the metrics, and a
+    // budget means no median comparison. $650 is within but not 10% under the $700 budget.
+    expect(first?.metrics.priceReference).toEqual({ basis: 'BUDGET', amount: 700 });
+    expect(first?.metrics.spareCapacityUsed).toBe(first?.breakdown.capacityFit);
+    expect(first?.metrics.scheduleLimitedBy).toBe('PICKUP_WINDOW');
+    expect(first?.highlights.map((h) => h.code)).toEqual(['ON_ROUTE', 'COMFORTABLE_SCHEDULE']);
+    expect(second?.highlights[0]?.code).toBe('NEAR_ROUTE');
+    // Dallas → Beaumont: a ~70 est. mi detour and over budget. Two cautions, route before price.
+    expect(third?.highlights.map((h) => [h.code, h.tone])).toEqual([
+      ['LARGE_DETOUR', 'caution'],
+      ['OVER_BUDGET', 'caution'],
+    ]);
   });
 });
 
@@ -167,17 +245,20 @@ describe('seeded scenario: Dallas → Houston (real PostGIS + deterministic seed
     );
     const { matches } = TransportMatchesResponseSchema.parse(res.body);
 
+    // Phase 3 weighted scores; the order is unchanged from Phase 2 (scores were 100, 100, 100, 98,
+    // 78, 30 under route efficiency alone). No budget, so price is against the $670 median.
     const ranked = matches.map((m) => [m.leg.id.replace('seed-truck-leg-', ''), m.score] as const);
     expect(ranked).toEqual([
-      // Dallas → Houston, zero detour; tie broken by est. price ($567, $648, $650).
-      ['02', 100],
-      ['07', 100],
-      ['01', 100],
-      // Oklahoma City → Houston passes through Dallas (~2 est. mi).
-      ['13', 98],
+      // Dallas → Houston, zero detour. 02 is part-loaded: the request takes half its spare pallets.
+      ['02', 87],
+      // 07 ($647.42) and 01 ($650) both round to 81; tie broken by est. price.
+      ['07', 81],
+      ['01', 81],
+      // Oklahoma City → Houston passes through Dallas (~2 est. mi) but is the dearest ($1,150).
+      ['13', 72],
       // Fort Worth → Houston (~22 est. mi), then Dallas → Beaumont (~70 est. mi).
-      ['08', 78],
-      ['14', 30],
+      ['08', 68],
+      ['14', 42],
     ]);
 
     // Excluded for the intended reasons: 03 reefer, 04 flatbed, 05 departs day 5, 06 only 2 spare
@@ -192,5 +273,19 @@ describe('seeded scenario: Dallas → Houston (real PostGIS + deterministic seed
     expect(byKey('02')?.metrics.estEmptyMilesRecovered).toBeNull();
     expect(byKey('02')?.reasons).toContain('Your load takes the trailer from 54% to 77% full (by pallets)');
     expect(byKey('13')?.reasons.join('\n')).toMatch(/Can reach your pickup during your pickup window \(est\. 4\.\d h/);
+
+    // Highlights (presentation only). No budget: price is against the $670 median of 6 feasible
+    // matches. Only 02 ($2.10/mi × est. loaded miles ≈ $567) is at least 10% under it.
+    expect(matches.every((m) => m.metrics.priceReference.basis === 'MATCH_MEDIAN')).toBe(true);
+    expect(byKey('02')?.metrics.priceReference.amount).toBe(670);
+    const highlighted = matches.map((m) => [m.leg.id.replace('seed-truck-leg-', ''), m.highlights.map((h) => h.code)]);
+    expect(highlighted).toEqual([
+      ['02', ['ON_ROUTE', 'BELOW_TYPICAL_PRICE']],
+      ['07', ['ON_ROUTE', 'COMFORTABLE_SCHEDULE']],
+      ['01', ['ON_ROUTE', 'COMFORTABLE_SCHEDULE']],
+      ['13', ['ON_ROUTE', 'COMFORTABLE_SCHEDULE']],
+      ['08', ['NEAR_ROUTE', 'COMFORTABLE_SCHEDULE']],
+      ['14', ['LARGE_DETOUR', 'COMFORTABLE_SCHEDULE']],
+    ]);
   });
 });

@@ -9,6 +9,8 @@ import { HomePage } from './pages/HomePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { TransportMatchesPage } from './pages/TransportMatchesPage';
 import { TransportRequestPage } from './pages/TransportRequestPage';
+import { TruckLegConfirmationPage } from './pages/TruckLegConfirmationPage';
+import { TruckLegListingPage } from './pages/TruckLegListingPage';
 
 const router = createBrowserRouter([
   {
@@ -18,6 +20,8 @@ const router = createBrowserRouter([
       { index: true, element: <HomePage /> },
       { path: 'request/transport', element: <TransportRequestPage /> },
       { path: 'requests/transport/:id/matches', element: <TransportMatchesPage /> },
+      { path: 'list/truck', element: <TruckLegListingPage /> },
+      { path: 'listings/truck/:id', element: <TruckLegConfirmationPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

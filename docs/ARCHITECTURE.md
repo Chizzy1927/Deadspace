@@ -44,10 +44,12 @@ Trucks often run empty or partly loaded on legs they are already planning to dri
 1. **"Where will your truck be free?"** Origin, for example where the current delivery ends.
 2. **"Where are you heading next?"** Destination, such as the home base or the next committed pickup. This field is required, because a leg with no destination is not stranded capacity.
 3. **"When are you leaving?"** Departure window (earliest and latest), plus an optional **"Must arrive by"** if the next commitment is fixed.
-4. **"Is the trailer empty or partly loaded?"** An empty/partial toggle. For partial, the carrier enters the pallets and weight already on board; a live trailer-fill bar shows the spare room.
-5. **Equipment & room:** trailer type, total pallet and weight capacity (with sensible defaults per trailer type, e.g. a 53′ dry van defaults to 26 pallets and 45,000 lb, both editable).
-6. **"How far off your route will you go?"** Max detour in miles (slider, default 100).
+4. **"Is the trailer empty or partly loaded?"** An empty/partial toggle. For partial, the carrier enters the pallets and weight already on board; live text shows the spare room (e.g. "Room for 12 more pallets and 22,000 lb"). There's no fill bar: capacity has two dimensions, so a single bar would imply a misleading combined utilisation. An EMPTY leg always submits zero committed capacity.
+5. **Equipment & room:** trailer type, total pallet and weight capacity, pre-filled with editable starting values for a typical 53′ dry van (26 pallets, 45,000 lb). Changing the trailer type leaves them alone; there are no per-type defaults.
+6. **"How far off your route will you go?"** Max detour in miles (slider, default 100; 5–300 in steps of 5 as a UI convenience, while the API accepts any whole number 1–300). The form notes that a larger allowance makes the leg eligible for more shipments without improving its rank.
 7. **Price:** flat price or rate per loaded mile.
+
+After submitting, the carrier lands on `/listings/truck/:id`, which shows the leg as persisted (fetched back from the API).
 
 **Matches page:** a request summary, then ranked cards showing the overall score, a breakdown bar, key metrics (§5), plain-language reasons, the estimated price and a mailto contact link. Includes empty, loading and error states. All road distances carry an "est." label with a tooltip: _"Estimated from straight-line distance × 1.2. Not a routed road distance."_
 
@@ -177,16 +179,16 @@ Notation: O = leg origin, X = leg destination, P = pickup, D = dropoff, d() = st
 
 **Score** (0–100 = 100 × Σ weight × component). Default weights:
 
-| Component            | Default weight | Formula (0–1)                                                                                                                                           |
-| -------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Route efficiency** | **0.55**       | `1 − estAdditionalMiles / maxDetourMiles`                                                                                                               |
-| Capacity utilisation | 0.15           | utilisation **after** the match (rewards filling stranded space)                                                                                        |
-| Price                | 0.15           | With a budget: `clamp((budget − price) / budget + 0.5, 0, 1)`, so at budget it scores 0.5 and cheaper scores higher. With no budget it's neutral at 0.5 |
-| Timing               | 0.15           | 1 if the leg departure falls inside the pickup window; otherwise decays linearly with hours of mismatch                                                 |
+| Component                          | Default weight | Formula (0–1)                                                                                                                                                                                      |
+| ---------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Route efficiency**               | **0.55**       | `clamp(1 − estAdditionalMiles / ROUTE_EFFICIENCY_REFERENCE_MILES)` (100). A fixed reference, not the carrier's `maxDetourMiles`, so a larger allowance widens feasibility but never raises ranking |
+| Spare-capacity fit (`capacityFit`) | 0.15           | Share of the carrier's **spare** room (total − committed) the request takes, in the dimension it takes more of. Freight already on board doesn't count                                             |
+| Price                              | 0.15           | `clamp(1.5 − estPrice / reference)`: 0.5 at the reference, 1 at half of it. Reference = the budget if set, else the median est. price of all feasible matches (before the cap)                     |
+| Timing                             | 0.15           | `clamp(slack / 4 h)`, where slack is the est. hours the earliest schedule can slip before the pickup window closes, the deliver-by or the carrier's arrive-by (whichever is tightest)              |
 
-Ties are broken by fewer additional miles, then lower price. Results are capped at 20.
+Ties are broken by fewer additional miles, then lower est. price, then leg id. Results are capped at 20.
 
-> **Pending change (Phase 3):** the route-efficiency denominator will become `min(maxDetourMiles, ROUTE_EFFICIENCY_REFERENCE_MILES)` so a carrier's declared limit can't inflate its score. See §9, Phase 3.
+**Presentation (Phase 3).** Each match also returns `spareCapacityUsed`, `estScheduleSlackHours` and `scheduleLimitedBy`, the price reference it was scored against, and at most two **highlights**: deterministic, rule-derived notes with stable codes (`ON_ROUTE`, `NEAR_ROUTE`, `LARGE_DETOUR`, `UNDER_BUDGET`, `OVER_BUDGET`, `BELOW_TYPICAL_PRICE`, `USES_MOST_SPARE_CAPACITY`, `COMFORTABLE_SCHEDULE`, `TIGHT_SCHEDULE`). Cautions come first. Thresholds are `HIGHLIGHT_THRESHOLDS` in `config.ts`; highlights never affect score or rank. The UI marks every estimated value "est." and explains it once per page.
 
 ### Warehouse space ↔ Storage request
 
@@ -257,9 +259,9 @@ Each phase ends working, verified and committed.
 - Minimal, functional UI: transport request form with LocationInput, and a matches page with score, est. metrics and reasons. The carrier truck-leg form moved to Phase 3 (endpoints exist).
 - Exit criterion: a user can submit a transport request in the browser and see ranked, real matches from the database.
 
-**Phase 3, refine truck matching.** The full weighted score from `config.ts` (capacity, price and timing components), a ScoreBreakdown UI, the "est." tooltip copy, and expanded unit tests. Metrics, reasons, timing feasibility and EMPTY/PARTIAL behaviour were already built in Phase 2. Also build and polish the guided carrier form (trailer defaults, fill bar, detour slider).
+**Phase 3, refine truck matching.** The full weighted score from `config.ts` (capacity, price and timing components), a ScoreBreakdown UI, the "est." tooltip copy, and expanded unit tests. Metrics, reasons, timing feasibility and EMPTY/PARTIAL behaviour were already built in Phase 2. Also build and polish the guided carrier form (trailer defaults, live spare-room text, detour slider) and its confirmation page (built in Phase 3, see §2).
 
-- **Required follow-up (decided in the Phase 1 review; deliberately not built yet): route-efficiency normalisation.** The §5 formula `1 − estAdditionalMiles / maxDetourMiles` divides by the carrier's _own_ declared limit, so a higher limit inflates that leg's score (at 300, a 150-mile detour scores 0.5; at 100 the same leg is infeasible). In Phase 3, normalise against `min(maxDetourMiles, ROUTE_EFFICIENCY_REFERENCE_MILES)` from `matching/config.ts`, so a carrier's limit only widens feasibility and never boosts ranking. Add unit tests showing two legs with identical geometry but different `maxDetourMiles` get the same route-efficiency component (below the reference). Update this section's score table and `/how-matching-works` to match.
+- **Route-efficiency normalisation (decided in the Phase 1 review; built in Phase 3 with a fixed `ROUTE_EFFICIENCY_REFERENCE_MILES` reference, see §5).** Original rationale: The §5 formula `1 − estAdditionalMiles / maxDetourMiles` divides by the carrier's _own_ declared limit, so a higher limit inflates that leg's score (at 300, a 150-mile detour scores 0.5; at 100 the same leg is infeasible). In Phase 3, normalise against `min(maxDetourMiles, ROUTE_EFFICIENCY_REFERENCE_MILES)` from `matching/config.ts`, so a carrier's limit only widens feasibility and never boosts ranking. Add unit tests showing two legs with identical geometry but different `maxDetourMiles` get the same route-efficiency component (below the reference). Update this section's score table and `/how-matching-works` to match.
 
 **Phase 4, warehouse flow.** Schemas, migration and seed for `WarehouseSpace` and `StorageRequest`; `matching/warehouse.ts` plus tests; endpoints; warehouse listing form and storage request form; storage matches page reusing the match components.
 

@@ -25,6 +25,12 @@ export function HomePage() {
         className="inline-block rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800"
       >
         Request transport
+      </Link>{' '}
+      <Link
+        to="/list/truck"
+        className="inline-block rounded border border-blue-700 px-4 py-2 font-medium text-blue-700 hover:bg-blue-50"
+      >
+        List a truck leg
       </Link>
       <p role="status" className="text-sm text-slate-500">
         {status}
