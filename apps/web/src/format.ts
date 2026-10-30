@@ -1,4 +1,4 @@
-import type { TrailerType, TruckPricingBasis } from '@deadspace/shared';
+import type { StoragePricingPeriod, TrailerType, TruckPricingBasis, WarehouseSpace } from '@deadspace/shared';
 
 const usdWhole = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const usdCents = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
@@ -30,4 +30,35 @@ export function formatSpareCapacity(pallets: number, weightLbs: number): string 
 
 export function formatTruckPrice(basis: TruckPricingBasis, amount: number): string {
   return basis === 'FLAT' ? `${formatUsd(amount)} flat` : `${usdCents.format(amount)} per loaded mile`;
+}
+
+export const PRICING_PERIOD_LABELS: Record<StoragePricingPeriod, string> = {
+  DAY: 'Day',
+  WEEK: 'Week',
+  MONTH: 'Month',
+};
+
+const calendarDate = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+/** `YYYY-MM-DD` as a readable date. Calendar days have no time zone, so this formats in UTC. */
+export const formatDate = (isoDate: string) => calendarDate.format(new Date(`${isoDate}T00:00:00Z`));
+export const formatDateRange = (from: string, to: string) => `${formatDate(from)} – ${formatDate(to)}`;
+export const formatDays = (days: number) => `${days} ${days === 1 ? 'day' : 'days'}`;
+export const formatPallets = (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? 'pallet' : 'pallets'}`;
+
+/** A per-pallet price with its billing period, e.g. "$12.50 per pallet per week". */
+export function formatPalletPrice(amount: number, period: StoragePricingPeriod): string {
+  return `${usdCents.format(amount)} per pallet per ${period.toLowerCase()}`;
+}
+
+/** Capabilities as the operator declared them (DeadSpace verifies none of them). */
+export function declaredCapabilities(space: Pick<WarehouseSpace, 'temperatureControlled' | 'foodGrade'>): string[] {
+  return [space.temperatureControlled && 'Temperature-controlled', space.foodGrade && 'Food-grade'].filter(
+    (c): c is string => c !== false,
+  );
 }

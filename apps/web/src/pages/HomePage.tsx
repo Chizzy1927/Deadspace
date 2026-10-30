@@ -20,18 +20,40 @@ export function HomePage() {
     <section className="space-y-4">
       <h1 className="text-2xl font-semibold">DeadSpace</h1>
       <p>Stranded truck legs and idle warehouse space, matched to shippers.</p>
-      <Link
-        to="/request/transport"
-        className="inline-block rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800"
-      >
-        Request transport
-      </Link>{' '}
-      <Link
-        to="/list/truck"
-        className="inline-block rounded border border-blue-700 px-4 py-2 font-medium text-blue-700 hover:bg-blue-50"
-      >
-        List a truck leg
-      </Link>
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold tracking-wide text-slate-500 uppercase">I need capacity</h2>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/request/transport"
+            className="rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800"
+          >
+            Request transport
+          </Link>
+          <Link
+            to="/request/storage"
+            className="rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800"
+          >
+            Request storage
+          </Link>
+        </div>
+      </div>
+      <div className="space-y-2">
+        <h2 className="text-sm font-semibold tracking-wide text-slate-500 uppercase">I have capacity</h2>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/list/truck"
+            className="rounded border border-blue-700 px-4 py-2 font-medium text-blue-700 hover:bg-blue-50"
+          >
+            List a truck leg
+          </Link>
+          <Link
+            to="/list/warehouse"
+            className="rounded border border-blue-700 px-4 py-2 font-medium text-blue-700 hover:bg-blue-50"
+          >
+            List warehouse space
+          </Link>
+        </div>
+      </div>
       <p role="status" className="text-sm text-slate-500">
         {status}
       </p>

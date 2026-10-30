@@ -1,10 +1,19 @@
 import {
+  addDays,
+  type CreateStorageRequestInput,
+  type CreateStorageRequestPayload,
   type CreateTransportRequestInput,
   type CreateTransportRequestPayload,
   type CreateTruckLegInput,
   type CreateTruckLegPayload,
+  type CreateWarehouseSpaceInput,
+  type CreateWarehouseSpacePayload,
+  CreateStorageRequestInputSchema,
   CreateTransportRequestInputSchema,
   CreateTruckLegInputSchema,
+  CreateWarehouseSpaceInputSchema,
+  toCalendarDate,
+  utcStartOfDay,
 } from '@deadspace/shared';
 import { createApp } from '../../src/app.js';
 import { loadEnv } from '../../src/config/env.js';
@@ -68,6 +77,39 @@ export function transportRequestInput(
     trailerType: 'DRY_VAN',
     pallets: 6,
     weightLbs: 9_000,
+    ...overrides,
+  });
+}
+
+/** `YYYY-MM-DD`, `days` after today (UTC). */
+export const daysFromToday = (days: number) => toCalendarDate(addDays(utcStartOfDay(new Date()), days));
+
+/** A valid warehouse space available from tomorrow for 60 days, parsed through the shared schema. */
+export function warehouseSpaceInput(overrides: Partial<CreateWarehouseSpacePayload> = {}): CreateWarehouseSpaceInput {
+  return CreateWarehouseSpaceInputSchema.parse({
+    companyName: 'Trinity Storage Co.',
+    contactName: 'Ana Ruiz',
+    contactEmail: 'ana@trinity.example.com',
+    location: DALLAS,
+    quantityAvailable: 200,
+    availableFrom: daysFromToday(1),
+    availableTo: daysFromToday(61),
+    pricingPeriod: 'MONTH',
+    pricePerPalletPerPeriod: 16,
+    ...overrides,
+  });
+}
+
+/** A valid 30-day storage request starting in a week, parsed through the shared schema. */
+export function storageRequestInput(overrides: Partial<CreateStorageRequestPayload> = {}): CreateStorageRequestInput {
+  return CreateStorageRequestInputSchema.parse({
+    companyName: 'Acme Goods',
+    contactName: 'Sam Lee',
+    contactEmail: 'sam@acme.example.com',
+    location: DALLAS,
+    pallets: 40,
+    startDate: daysFromToday(7),
+    endDate: daysFromToday(37),
     ...overrides,
   });
 }

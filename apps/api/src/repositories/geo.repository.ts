@@ -99,3 +99,46 @@ export async function findTruckLegCandidates(prisma: PrismaClient, requestId: st
     ORDER BY id`;
   return rows.map(({ id, ...distances }) => ({ legId: id, distances }));
 }
+
+export interface WarehouseCandidateRow {
+  spaceId: string;
+  /** Straight-line (geodesic) miles from the request's location, computed by PostGIS. */
+  straightLineMiles: number;
+}
+
+/**
+ * Active warehouse spaces within a persisted storage request's search radius, with the
+ * straight-line distance the matcher needs, ordered by id. Returns [] if the request doesn't exist.
+ *
+ * Only status and the radius are applied here. Dates, quantity, minimum block, minimum stay and
+ * features are left to matching/warehouse.ts, the single authority on feasibility.
+ *
+ * Radius semantics match checkWarehouseFeasibility exactly: the radius is est. road miles, and a
+ * space is kept iff miles × ROAD_FACTOR ≤ maxDistanceMiles, where `miles` is the same float8 value
+ * returned to the matcher (so both sides compute the identical product). ST_DWithin is a
+ * GiST-assisted pre-filter only, widened by 1 m so floating-point differences between it and
+ * ST_Distance can never drop a space the exact check keeps. (Unlike the truck detour, a radius
+ * around a fixed point is a valid spatial bound.)
+ */
+export async function findWarehouseCandidates(
+  prisma: PrismaClient,
+  requestId: string,
+): Promise<WarehouseCandidateRow[]> {
+  const rows = await prisma.$queryRaw<{ id: string; straightLineMiles: number }[]>`
+    WITH c AS (
+      SELECT w.id, r."maxDistanceMiles",
+             ST_Distance(w."locationGeog", r."locationGeog") / ${METERS_PER_MILE}::float8 AS "straightLineMiles"
+      FROM "WarehouseSpace" w
+      JOIN "StorageRequest" r ON r.id = ${requestId}
+      WHERE w.status = 'ACTIVE'
+        AND ST_DWithin(
+              w."locationGeog", r."locationGeog",
+              r."maxDistanceMiles" / ${ROAD_FACTOR}::float8 * ${METERS_PER_MILE}::float8 + 1
+            )
+    )
+    SELECT id, "straightLineMiles"
+    FROM c
+    WHERE "straightLineMiles" * ${ROAD_FACTOR}::float8 <= "maxDistanceMiles"
+    ORDER BY id`;
+  return rows.map(({ id, straightLineMiles }) => ({ spaceId: id, straightLineMiles }));
+}

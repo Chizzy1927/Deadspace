@@ -67,3 +67,61 @@ export const HIGHLIGHT_THRESHOLDS = {
   /** COMFORTABLE_SCHEDULE at or above this (the slack that earns full timing credit). */
   comfortableSlackHours: TIMING_FULL_SLACK_HOURS,
 } as const;
+
+// --- Warehouse space ↔ storage request (Phase 4) ---
+
+/** Weight of each warehouse score component (each component is 0–1). Must sum to 1. */
+export interface WarehouseScoreWeights {
+  location: number;
+  price: number;
+  capacityFit: number;
+  roomToExtend: number;
+}
+
+/** Warehouse score weights (approved V1 defaults). */
+export const WAREHOUSE_SCORE_WEIGHTS: Readonly<WarehouseScoreWeights> = {
+  location: 0.35,
+  price: 0.35,
+  capacityFit: 0.15,
+  roomToExtend: 0.15,
+};
+
+/**
+ * Est. road miles at which the location component reaches 0 (1 at the warehouse door, 0.5 at
+ * half this). A fixed reference, not the shipper's search radius: the radius only decides which
+ * warehouses are candidates, so widening it never changes an existing candidate's score. A
+ * tunable V1 heuristic, not an empirical logistics constant.
+ */
+export const LOCATION_REFERENCE_MILES = 50;
+
+/**
+ * Days of availability after the requested move-out day that earn full room-to-extend credit.
+ * Room beyond this earns nothing more, so a long-open listing isn't rewarded without limit.
+ */
+export const EXTENSION_FULL_CREDIT_DAYS = 14;
+
+/**
+ * Days per pricing period, used only to prorate a quoted rate into an est. stay cost so DAY, WEEK
+ * and MONTH listings can be compared. A comparison convention (a month is 30 days), not a claim
+ * about how an operator will invoice.
+ */
+export const PRICING_PERIOD_DAYS = { DAY: 1, WEEK: 7, MONTH: 30 } as const;
+
+/** Storage highlight thresholds (presentation only; never affect score or rank). Unrounded values. */
+export const STORAGE_HIGHLIGHT_THRESHOLDS = {
+  /** NEARBY at or below this many est. miles. */
+  nearbyMaxMiles: 10,
+  /**
+   * NEAR_EDGE_OF_RADIUS caution at or above this share of the shipper's radius, and only when
+   * not NEARBY (so a small radius never flags a warehouse that is close in absolute terms). A V1
+   * presentation heuristic describing the site relative to the shipper's stated tolerance, not a
+   * warehouse-domain truth. It never affects score or rank.
+   */
+  nearEdgeOfRadiusShare: 0.9,
+  /** UNDER_BUDGET / BELOW_TYPICAL_PRICE when est. total cost ≤ this share of the reference. */
+  belowReferenceRatio: 0.9,
+  /** BELOW_TYPICAL_PRICE needs at least this many feasible matches for the median to mean much. */
+  minMatchesForMedian: 3,
+  /** ROOM_TO_EXTEND at or above this many days after move-out (the full-credit amount). */
+  roomToExtendMinDays: EXTENSION_FULL_CREDIT_DAYS,
+} as const;

@@ -1,40 +1,8 @@
-import type { MatchHighlight, TransportMatch } from '@deadspace/shared';
-import type { ReactNode } from 'react';
+import type { TransportMatch } from '@deadspace/shared';
 import { formatMiles, formatPercent, formatUsd, formatWindow, TRAILER_LABELS } from '../format';
 import { Estimate } from './Estimate';
+import { Highlights, Metric } from './MatchParts';
 import { ScoreBreakdown } from './ScoreBreakdown';
-
-function Metric({ label, children }: { label: ReactNode; children: ReactNode }) {
-  return (
-    <div>
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="font-medium">{children}</dd>
-    </div>
-  );
-}
-
-const HIGHLIGHT_TONE: Record<MatchHighlight['tone'], string> = {
-  positive: 'border-emerald-200 bg-emerald-50 text-emerald-900',
-  caution: 'border-amber-300 bg-amber-50 text-amber-900',
-};
-
-function Highlights({ highlights }: { highlights: MatchHighlight[] }) {
-  if (highlights.length === 0) return null;
-  return (
-    <ul aria-label="Highlights" className="mt-3 flex flex-wrap gap-2">
-      {highlights.map((h) => (
-        <li
-          key={h.code}
-          data-highlight={h.code}
-          className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${HIGHLIGHT_TONE[h.tone]}`}
-        >
-          {h.tone === 'caution' && <span className="sr-only">Caution: </span>}
-          {h.text}
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 export function MatchCard({ match, rank }: { match: TransportMatch; rank: number }) {
   const { leg, metrics, score, highlights, reasons } = match;

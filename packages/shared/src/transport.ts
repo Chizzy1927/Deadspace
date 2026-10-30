@@ -4,13 +4,15 @@ import {
   ContactSchema,
   DAY_MS,
   HOUR_MS,
+  IsoDateTime,
   IsoDateTimeInput,
   LocationSchema,
   NotesSchema,
-  Status,
+  RecordMeta,
   straightLineMiles,
   systemClock,
   UsdAmountSchema,
+  withCrossFieldRules,
 } from './common.js';
 
 export const TrailerType = z.enum(['DRY_VAN', 'REEFER', 'FLATBED']);
@@ -59,17 +61,6 @@ const Pallets = z.number().int().min(1).max(TRANSPORT_LIMITS.maxPallets);
 const WeightLbs = z.number().int().min(1).max(TRANSPORT_LIMITS.maxWeightLbs);
 const CommittedPallets = z.number().int().min(0).max(TRANSPORT_LIMITS.maxPallets);
 const CommittedWeightLbs = z.number().int().min(0).max(TRANSPORT_LIMITS.maxWeightLbs);
-
-/**
- * Runs cross-field rules only once every field has parsed. (Zod 4 otherwise still runs refinements
- * after non-fatal field errors, handing them raw strings instead of Dates.)
- */
-function withCrossFieldRules<T extends z.ZodType>(
-  fields: T,
-  rules: (value: z.output<T>, ctx: z.RefinementCtx) => void,
-) {
-  return fields.pipe(z.custom<z.output<T>>().superRefine(rules));
-}
 
 /** Builds the TruckLeg create schema; `now` is injectable for deterministic tests. */
 export function createTruckLegInputSchema(now: Clock = systemClock) {
@@ -173,9 +164,6 @@ export function createTransportRequestInputSchema(now: Clock = systemClock) {
 export const CreateTransportRequestInputSchema = createTransportRequestInputSchema();
 export type CreateTransportRequestInput = z.output<typeof CreateTransportRequestInputSchema>;
 export type CreateTransportRequestPayload = z.input<typeof CreateTransportRequestInputSchema>;
-
-const IsoDateTime = z.iso.datetime({ offset: true });
-const RecordMeta = { id: z.string(), status: Status, createdAt: IsoDateTime, updatedAt: IsoDateTime };
 
 /** TruckLeg as returned by the API (JSON: dates as ISO strings). */
 export const TruckLegSchema = ContactSchema.extend({

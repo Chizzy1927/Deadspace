@@ -7,10 +7,14 @@ import { App } from './App';
 import './index.css';
 import { HomePage } from './pages/HomePage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { StorageMatchesPage } from './pages/StorageMatchesPage';
+import { StorageRequestPage } from './pages/StorageRequestPage';
 import { TransportMatchesPage } from './pages/TransportMatchesPage';
 import { TransportRequestPage } from './pages/TransportRequestPage';
 import { TruckLegConfirmationPage } from './pages/TruckLegConfirmationPage';
 import { TruckLegListingPage } from './pages/TruckLegListingPage';
+import { WarehouseSpaceConfirmationPage } from './pages/WarehouseSpaceConfirmationPage';
+import { WarehouseSpaceListingPage } from './pages/WarehouseSpaceListingPage';
 
 const router = createBrowserRouter([
   {
@@ -22,6 +26,10 @@ const router = createBrowserRouter([
       { path: 'requests/transport/:id/matches', element: <TransportMatchesPage /> },
       { path: 'list/truck', element: <TruckLegListingPage /> },
       { path: 'listings/truck/:id', element: <TruckLegConfirmationPage /> },
+      { path: 'request/storage', element: <StorageRequestPage /> },
+      { path: 'requests/storage/:id/matches', element: <StorageMatchesPage /> },
+      { path: 'list/warehouse', element: <WarehouseSpaceListingPage /> },
+      { path: 'listings/warehouse/:id', element: <WarehouseSpaceConfirmationPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

@@ -1,7 +1,6 @@
 // Pure score components for truck matching, each 0–1, and their weighted 0–100 combination.
 // Plain numbers in, plain numbers out. Weights and reference values: ./config.ts (tunable defaults).
 import {
-  PRICE_ZERO_SCORE_RATIO,
   ROUTE_EFFICIENCY_REFERENCE_MILES,
   TIMING_FULL_SLACK_HOURS,
   TRUCK_SCORE_WEIGHTS,
@@ -31,25 +30,8 @@ export function capacityFit(requested: Capacity, spare: Capacity): number {
   return Math.max(requested.pallets / spare.pallets, requested.weightLbs / spare.weightLbs);
 }
 
-/** Median of a non-empty list (mean of the middle two for an even count). Order-independent. */
-export function medianPrice(prices: readonly number[]): number {
-  if (prices.length === 0) throw new Error('medianPrice needs at least one price');
-  const sorted = [...prices].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1
-    ? (sorted[mid] as number)
-    : ((sorted[mid - 1] as number) + (sorted[mid] as number)) / 2;
-}
-
-/** The shipper's budget if given; otherwise the median est. price of all feasible matches. */
-export function priceReference(maxBudget: number | null, feasiblePrices: readonly number[]): number {
-  return maxBudget ?? medianPrice(feasiblePrices);
-}
-
-/** 1 at half the reference or less, 0.5 at the reference, 0 at 1.5× or more (linear between). */
-export function priceScore(estPrice: number, reference: number): number {
-  return clamp01(PRICE_ZERO_SCORE_RATIO - estPrice / reference);
-}
+// Price comparison is shared with warehouse matching; re-exported so truck callers are unchanged.
+export { medianPrice, priceReference, priceScore } from './price.js';
 
 /** Tightest est. schedule slack as a share of the full-credit slack, clamped. */
 export function timingScore(slackHours: number): number {

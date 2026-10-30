@@ -115,6 +115,78 @@ model TransportRequest {
   @@index([dropoffGeog], type: Gist)
 }
 
+/// Billing period of a warehouse's per-pallet price (pallet positions are the only V1 storage unit).
+enum StoragePricingPeriod {
+  DAY
+  WEEK
+  MONTH
+}
+
+/// Idle warehouse capacity: a bounded block of pallet positions free for a known window.
+/// Dates are calendar days: availableTo is the last day goods may be on site.
+model WarehouseSpace {
+  id           String @id @default(cuid())
+  companyName  String
+  contactName  String
+  contactEmail String
+  status       Status @default(ACTIVE)
+
+  locationLabel String
+  locationLat   Float
+  locationLng   Float
+  locationGeog  Unsupported("geography(Point,4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(\"locationLng\", \"locationLat\"), 4326))::geography"))
+
+  quantityAvailable Int
+  minPallets        Int?
+
+  availableFrom  DateTime @db.Date
+  availableTo    DateTime @db.Date
+  minStorageDays Int      @default(1)
+
+  temperatureControlled Boolean @default(false)
+  foodGrade             Boolean @default(false)
+
+  pricingPeriod           StoragePricingPeriod
+  pricePerPalletPerPeriod Decimal              @db.Decimal(10, 2)
+  handlingFeePerPallet    Decimal?             @db.Decimal(10, 2)
+  notes                   String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([status, availableFrom])
+  @@index([locationGeog], type: Gist)
+}
+
+/// A business's storage need. endDate is the move-out day; stay length = endDate − startDate.
+model StorageRequest {
+  id           String @id @default(cuid())
+  companyName  String
+  contactName  String
+  contactEmail String
+  status       Status @default(ACTIVE)
+
+  locationLabel    String
+  locationLat      Float
+  locationLng      Float
+  locationGeog     Unsupported("geography(Point,4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(\"locationLng\", \"locationLat\"), 4326))::geography"))
+  maxDistanceMiles Int                                   @default(25)
+
+  pallets   Int
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+
+  needsTemperatureControl Boolean  @default(false)
+  needsFoodGrade          Boolean  @default(false)
+  maxBudgetTotal          Decimal? @db.Decimal(10, 2)
+  notes                   String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([locationGeog], type: Gist)
+}
+
 /// Cached geocoder results: one row per result, ordered by rank. Only label/lat/lng + provider
 /// name are stored, never vendor payloads. Keyed by provider so switching geocoders never serves
 /// another provider's results.

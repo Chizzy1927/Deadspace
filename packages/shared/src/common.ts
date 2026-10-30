@@ -23,6 +23,32 @@ export type Contact = z.infer<typeof ContactSchema>;
 /** ISO 8601 timestamp with an explicit offset (or Z) on the wire, parsed to a Date. */
 export const IsoDateTimeInput = z.iso.datetime({ offset: true }).transform((s) => new Date(s));
 
+/** ISO 8601 timestamp as returned by the API (JSON strings, not parsed). */
+export const IsoDateTime = z.iso.datetime({ offset: true });
+
+/**
+ * A calendar date (`YYYY-MM-DD`) on the wire, parsed to a Date at UTC midnight. Calendar dates have
+ * no time zone, so all day arithmetic (daysBetween) runs on UTC midnights and is always exact.
+ */
+export const CalendarDateInput = z.iso.date().transform((s) => new Date(`${s}T00:00:00Z`));
+
+/** Calendar date (`YYYY-MM-DD`) as returned by the API. */
+export const CalendarDate = z.iso.date();
+
+/** id, status and timestamps shared by every record the API returns. */
+export const RecordMeta = { id: z.string(), status: Status, createdAt: IsoDateTime, updatedAt: IsoDateTime };
+
+/**
+ * Runs cross-field rules only once every field has parsed. (Zod 4 otherwise still runs refinements
+ * after non-fatal field errors, handing them raw strings instead of Dates.)
+ */
+export function withCrossFieldRules<T extends z.ZodType>(
+  fields: T,
+  rules: (value: z.output<T>, ctx: z.RefinementCtx) => void,
+) {
+  return fields.pipe(z.custom<z.output<T>>().superRefine(rules));
+}
+
 /** Optional free-text notes. */
 export const NotesSchema = z.string().trim().max(1000).optional();
 
@@ -35,6 +61,28 @@ export const systemClock: Clock = () => new Date();
 
 export const HOUR_MS = 60 * 60 * 1000;
 export const DAY_MS = 24 * HOUR_MS;
+
+/** UTC midnight of the calendar day containing `date`. */
+export function utcStartOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
+/** Whole calendar days from `from` to `to` (negative if `to` is earlier). Inputs are UTC midnights. */
+export function daysBetween(from: Date, to: Date): number {
+  return Math.round((to.getTime() - from.getTime()) / DAY_MS);
+}
+
+/** `date` plus a whole number of calendar days. */
+export function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * DAY_MS);
+}
+
+/** The `YYYY-MM-DD` calendar date of a UTC-midnight Date. */
+export function toCalendarDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
 
 /** Mean Earth radius in statute miles (IUGG mean radius, 6371.0088 km). */
 const EARTH_RADIUS_MILES = 3958.7613;
