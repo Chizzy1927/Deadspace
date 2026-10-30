@@ -1,8 +1,17 @@
 // Truck leg ↔ transport request matching. Pure and deterministic: no DB, HTTP, clock or
 // randomness. Reads top to bottom: hard constraints → metrics → score → reasons → rank.
 // Spec: docs/ARCHITECTURE.md §5. Weights and thresholds: ./config.ts (tunable defaults).
-import type { LoadState, Status, TrailerType, TruckMatchMetrics, TruckPricingBasis } from '@deadspace/shared';
+import type {
+  LoadState,
+  MatchHighlight,
+  Status,
+  TrailerType,
+  TruckMatchMetrics,
+  TruckPricingBasis,
+} from '@deadspace/shared';
 import { HANDLING_HOURS, MAX_RESULTS, TRUCK_SCORE_WEIGHTS, type TruckScoreWeights } from './config.js';
+import { miles, percent, usd } from './format.js';
+import { truckHighlights } from './truck-highlights.js';
 import {
   estAdditionalMiles,
   estDriveHours,
@@ -72,6 +81,7 @@ export interface TruckMatchResult {
   score: number;
   breakdown: TruckScoreComponents;
   metrics: TruckMatchMetrics;
+  highlights: MatchHighlight[];
   reasons: string[];
 }
 
@@ -149,13 +159,14 @@ export function checkTruckFeasibility(request: TruckMatchRequest, candidate: Tru
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
-const percent = (ratio: number) => `${Math.round(ratio * 100)}%`;
-const miles = (n: number) => `${Math.round(n).toLocaleString('en-US')} mi`;
-const usd = (n: number) =>
-  `$${n.toLocaleString('en-US', Number.isInteger(n) ? {} : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** Metrics for a feasible candidate (full precision; rounded only for output). */
-function computeMetrics(request: TruckMatchRequest, { leg, distances }: TruckCandidate) {
+function computeMetrics(
+  request: TruckMatchRequest,
+  { leg, distances }: TruckCandidate,
+  slack: ScheduleSlack,
+  reference: number,
+) {
   const additional = estAdditionalMiles(distances);
   const loaded = estRoadMiles(distances.pickupToDropoff);
   const pallets = utilisation(leg.committedPallets, request.pallets, leg.totalPallets);
@@ -166,8 +177,10 @@ function computeMetrics(request: TruckMatchRequest, { leg, distances }: TruckCan
   // Same basis as the capacity score: the share of the spare room taken, not fill after (ties → PALLETS).
   const palletShare = request.pallets / sparePallets;
   const weightShare = request.weightLbs / spareWeightLbs;
+  const price = estPrice(leg.pricingBasis, leg.priceAmount, loaded);
   return {
     additional,
+    price,
     metrics: {
       estDirectLegMiles: round1(estRoadMiles(distances.originToDestination)),
       estAdditionalMiles: round1(additional),
@@ -178,7 +191,17 @@ function computeMetrics(request: TruckMatchRequest, { leg, distances }: TruckCan
       palletUtilisation: pallets,
       weightUtilisation: weight,
       limitingCapacity: weightShare > palletShare ? 'WEIGHT' : 'PALLETS',
-      estPrice: estPrice(leg.pricingBasis, leg.priceAmount, loaded),
+      estPrice: price,
+      spareCapacityUsed: capacityFit(
+        { pallets: request.pallets, weightLbs: request.weightLbs },
+        { pallets: sparePallets, weightLbs: spareWeightLbs },
+      ),
+      estScheduleSlackHours: round1(slack.hours),
+      scheduleLimitedBy: slack.limitedBy,
+      priceReference: {
+        basis: request.maxBudget === null ? 'MATCH_MEDIAN' : 'BUDGET',
+        amount: Math.round(reference * 100) / 100,
+      },
     } satisfies TruckMatchMetrics,
   };
 }
@@ -250,22 +273,22 @@ export interface ScoreOptions {
    * feasible matches). Defaults to scoring the candidate as the only match.
    */
   priceReference?: number;
+  /** Feasible candidates the price median was taken over (for highlights only). Defaults to 1. */
+  feasibleMatches?: number;
   weights?: Readonly<TruckScoreWeights>;
 }
 
 /** Scores and explains a candidate that has already passed checkTruckFeasibility. */
 export function scoreTruckLeg(request: TruckMatchRequest, candidate: TruckCandidate, options: ScoreOptions = {}) {
   const { leg } = candidate;
-  const { additional, metrics } = computeMetrics(request, candidate);
-  const reference = options.priceReference ?? priceReference(request.maxBudget, [metrics.estPrice]);
+  const slack = scheduleSlack(request, candidate);
+  const reference = options.priceReference ?? priceReference(request.maxBudget, [candidatePrice(candidate)]);
+  const { additional, price, metrics } = computeMetrics(request, candidate, slack, reference);
   const breakdown: TruckScoreComponents = {
     routeEfficiency: routeEfficiency(additional),
-    capacityFit: capacityFit(
-      { pallets: request.pallets, weightLbs: request.weightLbs },
-      { pallets: metrics.sparePallets, weightLbs: metrics.spareWeightLbs },
-    ),
-    price: priceScore(metrics.estPrice, reference),
-    timing: timingScore(scheduleSlack(request, candidate).hours),
+    capacityFit: metrics.spareCapacityUsed,
+    price: priceScore(price, reference),
+    timing: timingScore(slack.hours),
   };
   const score = weightedScore(breakdown, options.weights);
   const result: TruckMatchResult = {
@@ -273,6 +296,12 @@ export function scoreTruckLeg(request: TruckMatchRequest, candidate: TruckCandid
     score,
     breakdown,
     metrics,
+    highlights: truckHighlights({
+      metrics,
+      estAdditionalMiles: additional,
+      scheduleSlackHours: slack.hours,
+      feasibleMatches: options.feasibleMatches ?? 1,
+    }),
     reasons: explain(request, candidate, additional, metrics),
   };
   return { result, additional };
@@ -293,7 +322,9 @@ export function rankTruckLegs(
   if (feasible.length === 0) return [];
   const reference = priceReference(request.maxBudget, feasible.map(candidatePrice));
   return feasible
-    .map((candidate) => scoreTruckLeg(request, candidate, { priceReference: reference, weights }))
+    .map((candidate) =>
+      scoreTruckLeg(request, candidate, { priceReference: reference, feasibleMatches: feasible.length, weights }),
+    )
     .sort(
       (a, b) =>
         b.result.score - a.result.score ||

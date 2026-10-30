@@ -153,6 +153,19 @@ describe('create request → get matches (real PostGIS)', () => {
     expect(third?.metrics.palletUtilisation).toEqual({ before: 10 / 26, after: 16 / 26 });
     expect(third?.metrics.estPrice).toBeCloseTo(2.75 * (third?.metrics.estLoadedMiles ?? 0), 0);
     expect(third?.reasons.join('\n')).toMatch(/over your \$700 budget/);
+
+    // Presentation fields: budget is the price reference; highlights follow the metrics, and a
+    // budget means no median comparison. $650 is within but not 10% under the $700 budget.
+    expect(first?.metrics.priceReference).toEqual({ basis: 'BUDGET', amount: 700 });
+    expect(first?.metrics.spareCapacityUsed).toBe(first?.breakdown.capacityFit);
+    expect(first?.metrics.scheduleLimitedBy).toBe('PICKUP_WINDOW');
+    expect(first?.highlights.map((h) => h.code)).toEqual(['ON_ROUTE', 'COMFORTABLE_SCHEDULE']);
+    expect(second?.highlights[0]?.code).toBe('NEAR_ROUTE');
+    // Dallas → Beaumont: a ~70 est. mi detour and over budget. Two cautions, route before price.
+    expect(third?.highlights.map((h) => [h.code, h.tone])).toEqual([
+      ['LARGE_DETOUR', 'caution'],
+      ['OVER_BUDGET', 'caution'],
+    ]);
   });
 });
 
@@ -200,5 +213,19 @@ describe('seeded scenario: Dallas → Houston (real PostGIS + deterministic seed
     expect(byKey('02')?.metrics.estEmptyMilesRecovered).toBeNull();
     expect(byKey('02')?.reasons).toContain('Your load takes the trailer from 54% to 77% full (by pallets)');
     expect(byKey('13')?.reasons.join('\n')).toMatch(/Can reach your pickup during your pickup window \(est\. 4\.\d h/);
+
+    // Highlights (presentation only). No budget: price is against the $670 median of 6 feasible
+    // matches. Only 02 ($2.10/mi × est. loaded miles ≈ $567) is at least 10% under it.
+    expect(matches.every((m) => m.metrics.priceReference.basis === 'MATCH_MEDIAN')).toBe(true);
+    expect(byKey('02')?.metrics.priceReference.amount).toBe(670);
+    const highlighted = matches.map((m) => [m.leg.id.replace('seed-truck-leg-', ''), m.highlights.map((h) => h.code)]);
+    expect(highlighted).toEqual([
+      ['02', ['ON_ROUTE', 'BELOW_TYPICAL_PRICE']],
+      ['07', ['ON_ROUTE', 'COMFORTABLE_SCHEDULE']],
+      ['01', ['ON_ROUTE', 'COMFORTABLE_SCHEDULE']],
+      ['13', ['ON_ROUTE', 'COMFORTABLE_SCHEDULE']],
+      ['08', ['NEAR_ROUTE', 'COMFORTABLE_SCHEDULE']],
+      ['14', ['LARGE_DETOUR', 'COMFORTABLE_SCHEDULE']],
+    ]);
   });
 });

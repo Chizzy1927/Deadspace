@@ -44,3 +44,26 @@ export const PRICE_ZERO_SCORE_RATIO = 1.5;
 
 /** Hours of est. schedule slack that earn full timing credit (absorbs drive-time estimate error). */
 export const TIMING_FULL_SLACK_HOURS = 4;
+
+/**
+ * Highlight thresholds (presentation only; they never affect score or rank). Rules compare the
+ * unrounded values; only the highlight text is rounded for display.
+ */
+export const HIGHLIGHT_THRESHOLDS = {
+  /** ON_ROUTE below this many est. additional miles. */
+  onRouteMaxMiles: 5,
+  /** NEAR_ROUTE from onRouteMaxMiles up to and including this. */
+  nearRouteMaxMiles: 25,
+  /** LARGE_DETOUR caution at or above this (none between nearRouteMaxMiles and this). */
+  largeDetourMinMiles: 60,
+  /** UNDER_BUDGET / BELOW_TYPICAL_PRICE when est. price ≤ this share of the reference. */
+  belowReferenceRatio: 0.9,
+  /** BELOW_TYPICAL_PRICE needs at least this many feasible matches for the median to mean much. */
+  minMatchesForMedian: 3,
+  /** USES_MOST_SPARE_CAPACITY at or above this share of the carrier's spare room (capacityFit). */
+  mostSpareCapacityShare: 0.75,
+  /** TIGHT_SCHEDULE caution below this many est. hours of slack. */
+  tightSlackHours: 2,
+  /** COMFORTABLE_SCHEDULE at or above this (the slack that earns full timing credit). */
+  comfortableSlackHours: TIMING_FULL_SLACK_HOURS,
+} as const;

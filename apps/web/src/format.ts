@@ -14,6 +14,7 @@ const dateTime = new Intl.DateTimeFormat(undefined, {
 export const formatMiles = (miles: number) => `${Math.round(miles).toLocaleString('en-US')} mi`;
 export const formatUsd = (amount: number) => (Number.isInteger(amount) ? usdWhole : usdCents).format(amount);
 export const formatPercent = (ratio: number) => `${Math.round(ratio * 100)}%`;
+export const formatHours = (hours: number) => `${hours.toFixed(1)} h`;
 export const formatDateTime = (iso: string) => dateTime.format(new Date(iso));
 export const formatWindow = (from: string, to: string) => `${formatDateTime(from)} – ${formatDateTime(to)}`;
 

@@ -238,22 +238,62 @@ export const TruckMatchMetricsSchema = z.object({
   limitingCapacity: z.enum(['PALLETS', 'WEIGHT']),
   /** USD, from the listing's pricing basis. */
   estPrice: z.number(),
+  /** Share of the carrier's spare room (0–1) the request takes, in the limiting dimension. */
+  spareCapacityUsed: z.number().min(0).max(1),
+  /** Est. hours the earliest schedule can slip before a fixed time is missed (from est. drive times). */
+  estScheduleSlackHours: z.number(),
+  /** The fixed time that sets the schedule slack. */
+  scheduleLimitedBy: z.enum(['PICKUP_WINDOW', 'DELIVER_BY', 'ARRIVE_BY']),
+  /** What the price was scored against: the shipper's budget, or the median est. price of feasible matches. */
+  priceReference: z.object({ basis: z.enum(['BUDGET', 'MATCH_MEDIAN']), amount: z.number() }),
 });
 export type TruckMatchMetrics = z.infer<typeof TruckMatchMetricsSchema>;
+
+const ScoreComponent = z.number().min(0).max(1);
+
+/** Score components, each 0–1; score = round(100 × Σ weight × component). */
+export const TruckScoreBreakdownSchema = z.object({
+  routeEfficiency: ScoreComponent,
+  capacityFit: ScoreComponent,
+  price: ScoreComponent,
+  timing: ScoreComponent,
+});
+export type TruckScoreBreakdown = z.infer<typeof TruckScoreBreakdownSchema>;
+
+/** Stable machine-readable codes for deterministic match highlights. */
+export const MatchHighlightCode = z.enum([
+  'ON_ROUTE',
+  'NEAR_ROUTE',
+  'LARGE_DETOUR',
+  'UNDER_BUDGET',
+  'OVER_BUDGET',
+  'BELOW_TYPICAL_PRICE',
+  'USES_MOST_SPARE_CAPACITY',
+  'COMFORTABLE_SCHEDULE',
+  'TIGHT_SCHEDULE',
+]);
+export type MatchHighlightCode = z.infer<typeof MatchHighlightCode>;
+
+/** Most highlights shown on one match. */
+export const MAX_MATCH_HIGHLIGHTS = 2;
+
+/** A short, rule-derived note on what stands out about a match. Caution notes come first. */
+export const MatchHighlightSchema = z.object({
+  code: MatchHighlightCode,
+  tone: z.enum(['positive', 'caution']),
+  text: z.string(),
+});
+export type MatchHighlight = z.infer<typeof MatchHighlightSchema>;
 
 /** One ranked truck-leg match for a transport request. */
 export const TransportMatchSchema = z.object({
   leg: TruckLegSchema,
   /** 0–100. */
   score: z.number().int().min(0).max(100),
-  /** Score components, each 0–1; score = round(100 × Σ weight × component). */
-  breakdown: z.object({
-    routeEfficiency: z.number(),
-    capacityFit: z.number(),
-    price: z.number(),
-    timing: z.number(),
-  }),
+  breakdown: TruckScoreBreakdownSchema,
   metrics: TruckMatchMetricsSchema,
+  /** At most MAX_MATCH_HIGHLIGHTS; distinct from `reasons`, which explain every dimension. */
+  highlights: z.array(MatchHighlightSchema).max(MAX_MATCH_HIGHLIGHTS),
   reasons: z.array(z.string()),
 });
 export type TransportMatch = z.infer<typeof TransportMatchSchema>;

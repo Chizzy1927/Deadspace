@@ -177,16 +177,16 @@ Notation: O = leg origin, X = leg destination, P = pickup, D = dropoff, d() = st
 
 **Score** (0–100 = 100 × Σ weight × component). Default weights:
 
-| Component            | Default weight | Formula (0–1)                                                                                                                                           |
-| -------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Route efficiency** | **0.55**       | `1 − estAdditionalMiles / maxDetourMiles`                                                                                                               |
-| Capacity utilisation | 0.15           | utilisation **after** the match (rewards filling stranded space)                                                                                        |
-| Price                | 0.15           | With a budget: `clamp((budget − price) / budget + 0.5, 0, 1)`, so at budget it scores 0.5 and cheaper scores higher. With no budget it's neutral at 0.5 |
-| Timing               | 0.15           | 1 if the leg departure falls inside the pickup window; otherwise decays linearly with hours of mismatch                                                 |
+| Component                          | Default weight | Formula (0–1)                                                                                                                                                                                      |
+| ---------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Route efficiency**               | **0.55**       | `clamp(1 − estAdditionalMiles / ROUTE_EFFICIENCY_REFERENCE_MILES)` (100). A fixed reference, not the carrier's `maxDetourMiles`, so a larger allowance widens feasibility but never raises ranking |
+| Spare-capacity fit (`capacityFit`) | 0.15           | Share of the carrier's **spare** room (total − committed) the request takes, in the dimension it takes more of. Freight already on board doesn't count                                             |
+| Price                              | 0.15           | `clamp(1.5 − estPrice / reference)`: 0.5 at the reference, 1 at half of it. Reference = the budget if set, else the median est. price of all feasible matches (before the cap)                     |
+| Timing                             | 0.15           | `clamp(slack / 4 h)`, where slack is the est. hours the earliest schedule can slip before the pickup window closes, the deliver-by or the carrier's arrive-by (whichever is tightest)              |
 
-Ties are broken by fewer additional miles, then lower price. Results are capped at 20.
+Ties are broken by fewer additional miles, then lower est. price, then leg id. Results are capped at 20.
 
-> **Pending change (Phase 3):** the route-efficiency denominator will become `min(maxDetourMiles, ROUTE_EFFICIENCY_REFERENCE_MILES)` so a carrier's declared limit can't inflate its score. See §9, Phase 3.
+**Presentation (Phase 3).** Each match also returns `spareCapacityUsed`, `estScheduleSlackHours` and `scheduleLimitedBy`, the price reference it was scored against, and at most two **highlights**: deterministic, rule-derived notes with stable codes (`ON_ROUTE`, `NEAR_ROUTE`, `LARGE_DETOUR`, `UNDER_BUDGET`, `OVER_BUDGET`, `BELOW_TYPICAL_PRICE`, `USES_MOST_SPARE_CAPACITY`, `COMFORTABLE_SCHEDULE`, `TIGHT_SCHEDULE`). Cautions come first. Thresholds are `HIGHLIGHT_THRESHOLDS` in `config.ts`; highlights never affect score or rank. The UI marks every estimated value "est." and explains it once per page.
 
 ### Warehouse space ↔ Storage request
 
@@ -259,7 +259,7 @@ Each phase ends working, verified and committed.
 
 **Phase 3, refine truck matching.** The full weighted score from `config.ts` (capacity, price and timing components), a ScoreBreakdown UI, the "est." tooltip copy, and expanded unit tests. Metrics, reasons, timing feasibility and EMPTY/PARTIAL behaviour were already built in Phase 2. Also build and polish the guided carrier form (trailer defaults, fill bar, detour slider).
 
-- **Required follow-up (decided in the Phase 1 review; deliberately not built yet): route-efficiency normalisation.** The §5 formula `1 − estAdditionalMiles / maxDetourMiles` divides by the carrier's _own_ declared limit, so a higher limit inflates that leg's score (at 300, a 150-mile detour scores 0.5; at 100 the same leg is infeasible). In Phase 3, normalise against `min(maxDetourMiles, ROUTE_EFFICIENCY_REFERENCE_MILES)` from `matching/config.ts`, so a carrier's limit only widens feasibility and never boosts ranking. Add unit tests showing two legs with identical geometry but different `maxDetourMiles` get the same route-efficiency component (below the reference). Update this section's score table and `/how-matching-works` to match.
+- **Route-efficiency normalisation (decided in the Phase 1 review; built in Phase 3 with a fixed `ROUTE_EFFICIENCY_REFERENCE_MILES` reference, see §5).** Original rationale: The §5 formula `1 − estAdditionalMiles / maxDetourMiles` divides by the carrier's _own_ declared limit, so a higher limit inflates that leg's score (at 300, a 150-mile detour scores 0.5; at 100 the same leg is infeasible). In Phase 3, normalise against `min(maxDetourMiles, ROUTE_EFFICIENCY_REFERENCE_MILES)` from `matching/config.ts`, so a carrier's limit only widens feasibility and never boosts ranking. Add unit tests showing two legs with identical geometry but different `maxDetourMiles` get the same route-efficiency component (below the reference). Update this section's score table and `/how-matching-works` to match.
 
 **Phase 4, warehouse flow.** Schemas, migration and seed for `WarehouseSpace` and `StorageRequest`; `matching/warehouse.ts` plus tests; endpoints; warehouse listing form and storage request form; storage matches page reusing the match components.
 

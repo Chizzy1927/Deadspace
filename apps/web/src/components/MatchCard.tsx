@@ -1,17 +1,8 @@
-import type { TransportMatch } from '@deadspace/shared';
+import type { MatchHighlight, TransportMatch } from '@deadspace/shared';
 import type { ReactNode } from 'react';
 import { formatMiles, formatPercent, formatUsd, formatWindow, TRAILER_LABELS } from '../format';
-
-const EST_TOOLTIP = 'Estimated from straight-line distance. Not a routed road distance.';
-
-/** "est." marker required on every road-distance estimate (CLAUDE.md). */
-function Est() {
-  return (
-    <abbr title={EST_TOOLTIP} className="cursor-help no-underline">
-      est.
-    </abbr>
-  );
-}
+import { Estimate } from './Estimate';
+import { ScoreBreakdown } from './ScoreBreakdown';
 
 function Metric({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
@@ -22,8 +13,31 @@ function Metric({ label, children }: { label: ReactNode; children: ReactNode }) 
   );
 }
 
+const HIGHLIGHT_TONE: Record<MatchHighlight['tone'], string> = {
+  positive: 'border-emerald-200 bg-emerald-50 text-emerald-900',
+  caution: 'border-amber-300 bg-amber-50 text-amber-900',
+};
+
+function Highlights({ highlights }: { highlights: MatchHighlight[] }) {
+  if (highlights.length === 0) return null;
+  return (
+    <ul aria-label="Highlights" className="mt-3 flex flex-wrap gap-2">
+      {highlights.map((h) => (
+        <li
+          key={h.code}
+          data-highlight={h.code}
+          className={`rounded-full border px-2.5 py-0.5 text-xs font-medium ${HIGHLIGHT_TONE[h.tone]}`}
+        >
+          {h.tone === 'caution' && <span className="sr-only">Caution: </span>}
+          {h.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function MatchCard({ match, rank }: { match: TransportMatch; rank: number }) {
-  const { leg, metrics, score, reasons } = match;
+  const { leg, metrics, score, highlights, reasons } = match;
   const limiting = metrics.limitingCapacity === 'WEIGHT' ? metrics.weightUtilisation : metrics.palletUtilisation;
 
   return (
@@ -51,62 +65,38 @@ export function MatchCard({ match, rank }: { match: TransportMatch; rank: number
         </div>
       </header>
 
-      <dl className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Metric
-          label={
-            <>
-              Extra miles for carrier (<Est />)
-            </>
-          }
-        >
-          {formatMiles(metrics.estAdditionalMiles)}
-        </Metric>
-        <Metric
-          label={
-            <>
-              Loaded miles (<Est />)
-            </>
-          }
-        >
-          {formatMiles(metrics.estLoadedMiles)}
-        </Metric>
-        {metrics.estEmptyMilesRecovered !== null ? (
-          <Metric
-            label={
-              <>
-                Empty miles recovered (<Est />)
-              </>
-            }
-          >
-            {formatMiles(metrics.estEmptyMilesRecovered)}
+      <Highlights highlights={highlights} />
+
+      <div className="mt-4 grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <ScoreBreakdown match={match} />
+
+        <dl className="grid grid-cols-2 content-start gap-3">
+          <Metric label="Extra miles for carrier">
+            <Estimate>{formatMiles(metrics.estAdditionalMiles)}</Estimate>
           </Metric>
-        ) : (
-          <Metric label="Spare room before your load">
-            {metrics.sparePallets} pallets · {metrics.spareWeightLbs.toLocaleString('en-US')} lb
+          <Metric label="Loaded miles">
+            <Estimate>{formatMiles(metrics.estLoadedMiles)}</Estimate>
           </Metric>
-        )}
-        <Metric
-          label={
-            <>
-              Price (<Est />)
-            </>
-          }
-        >
-          {formatUsd(metrics.estPrice)}
-        </Metric>
-        <Metric label={`Trailer fill (by ${metrics.limitingCapacity === 'WEIGHT' ? 'weight' : 'pallets'})`}>
-          {formatPercent(limiting.before)} → {formatPercent(limiting.after)}
-        </Metric>
-        <Metric
-          label={
-            <>
-              Carrier&apos;s planned leg (<Est />)
-            </>
-          }
-        >
-          {formatMiles(metrics.estDirectLegMiles)}
-        </Metric>
-      </dl>
+          {metrics.estEmptyMilesRecovered !== null ? (
+            <Metric label="Empty miles recovered">
+              <Estimate>{formatMiles(metrics.estEmptyMilesRecovered)}</Estimate>
+            </Metric>
+          ) : (
+            <Metric label="Spare room before your load">
+              {metrics.sparePallets} pallets · {metrics.spareWeightLbs.toLocaleString('en-US')} lb
+            </Metric>
+          )}
+          <Metric label="Price">
+            <Estimate>{formatUsd(metrics.estPrice)}</Estimate>
+          </Metric>
+          <Metric label={`Trailer fill (by ${metrics.limitingCapacity === 'WEIGHT' ? 'weight' : 'pallets'})`}>
+            {formatPercent(limiting.before)} → {formatPercent(limiting.after)}
+          </Metric>
+          <Metric label="Carrier's planned leg">
+            <Estimate>{formatMiles(metrics.estDirectLegMiles)}</Estimate>
+          </Metric>
+        </dl>
+      </div>
 
       <ul className="mt-4 list-disc space-y-1 pl-5 text-sm text-slate-700">
         {reasons.map((reason) => (

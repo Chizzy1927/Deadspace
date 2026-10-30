@@ -10,7 +10,7 @@ import {
   type TruckLegFacts,
   type TruckMatchRequest,
 } from '../../src/matching/truck.js';
-import { weightedScore } from '../../src/matching/truck-score.js';
+import { timingScore, weightedScore } from '../../src/matching/truck-score.js';
 
 const at = (iso: string) => new Date(`2026-11-02T${iso}:00Z`);
 const hoursAfter = (date: Date, h: number) => new Date(date.getTime() + h * 3_600_000);
@@ -285,7 +285,30 @@ describe('metrics', () => {
       weightUtilisation: { before: 0.5, after: 37_000 / 44_000 },
       limitingCapacity: 'WEIGHT',
       estPrice: 650,
+      // Phase 3 presentation metrics: 15,000 of 22,000 spare lb; departs 13:00, 15 est. mi (0.3 h) to
+      // the pickup, window closes 20:00; no budget and no other matches, so its own price is the median.
+      spareCapacityUsed: 15_000 / 22_000,
+      estScheduleSlackHours: 6.7,
+      scheduleLimitedBy: 'PICKUP_WINDOW',
+      priceReference: { basis: 'MATCH_MEDIAN', amount: 650 },
     });
+  });
+
+  it('exposes spare-capacity use and schedule slack on the same basis as the score', () => {
+    const leg = { loadState: 'PARTIAL', committedPallets: 14, committedWeightLbs: 22_000 } as const;
+    const req = request({ weightLbs: 15_000, deliverBy: at('20:30') });
+    const c = candidate(leg, detourOf(30));
+    const { result } = scoreTruckLeg(req, c);
+    const slack = scheduleSlack(req, c);
+    expect(result.metrics.spareCapacityUsed).toBe(result.breakdown.capacityFit);
+    expect(result.metrics.estScheduleSlackHours).toBe(Math.round(slack.hours * 10) / 10);
+    expect(result.metrics.scheduleLimitedBy).toBe(slack.limitedBy);
+    expect(result.breakdown.timing).toBe(timingScore(slack.hours));
+  });
+
+  it('reports the budget as the price reference when one is set', () => {
+    const { result } = scoreTruckLeg(request({ maxBudget: 700 }), candidate());
+    expect(result.metrics.priceReference).toEqual({ basis: 'BUDGET', amount: 700 });
   });
 
   it('picks the limiting capacity by share of spare room, not by how full the trailer ends up', () => {
@@ -361,6 +384,19 @@ describe('ranking', () => {
       candidate({ id: 'too-far' }, detourOf(150)),
     ]);
     expect(ranked.map((m) => m.legId)).toEqual(['ok']);
+  });
+
+  it('attaches highlights, counting only feasible legs toward the median comparison', () => {
+    const cheap = candidate({ id: 'cheap', priceAmount: 400 });
+    const others = [candidate({ id: 'mid', priceAmount: 650 }), candidate({ id: 'dear', priceAmount: 900 })];
+    const highlightsOf = (ranked: ReturnType<typeof rankTruckLegs>) =>
+      ranked.find((m) => m.legId === 'cheap')?.highlights.map((h) => h.code);
+
+    // Three feasible legs, median $650: $400 is ≤ 90% of it.
+    expect(highlightsOf(rankTruckLegs(request(), [cheap, ...others]))).toEqual(['ON_ROUTE', 'BELOW_TYPICAL_PRICE']);
+    // Swap one for an infeasible reefer: two feasible legs are too few for "typical".
+    const twoFeasible = [cheap, others[0] as TruckCandidate, candidate({ id: 'reefer', trailerType: 'REEFER' })];
+    expect(highlightsOf(rankTruckLegs(request(), twoFeasible))).toEqual(['ON_ROUTE', 'COMFORTABLE_SCHEDULE']);
   });
 
   it('breaks score ties by fewer additional miles, then lower price, then leg id', () => {
