@@ -31,7 +31,7 @@ For each flag, state whether it's justified (with the reason) or a weakening tha
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | Always                        | `npm run lint`, `npm run typecheck`, `npm test`                                                                               |
 | api / shared / prisma changed | `npm run test:integration` (needs `docker compose up -d`; if the DB is unavailable, mark NOT RUN, never PASS)                 |
-| prisma changed                | `npm exec -w apps/api -- prisma validate`, and confirm a migration accompanies schema changes                                 |
+| prisma changed                | `npm exec -w apps/api -- prisma validate`, `npm run db:drift` (after migrating), and confirm a migration accompanies changes  |
 | any app code changed          | `npm run build`                                                                                                               |
 | user-facing flow changed      | Exercise it in the running app (`npm run dev`, or the `run` skill), or state explicitly that it was not verified in a browser |
 

@@ -1,5 +1,14 @@
-// DeadSpace database schema. Domain tables arrive in Phase 1.
-// The datasource URL is configured in prisma.config.ts (Prisma 7).
+// DeadSpace database schema. The datasource URL is configured in prisma.config.ts (Prisma 7).
+//
+// Geography columns (*Geog) are GENERATED ALWAYS from the lat/lng columns in the hand-edited
+// migration; app code writes lat/lng only. They are optional here because Prisma omits create
+// methods for models with required Unsupported fields; the database never leaves them null.
+// Their @default(dbgenerated(...)) mirrors how Prisma introspects the generation expression, so
+// schema and database stay drift-free. Prisma would emit a plain DEFAULT for a *new* geog column:
+// any future migration adding one must be hand-edited to GENERATED ALWAYS ... STORED as well.
+// Copy dbgenerated strings from `prisma db pull --print` (compared as literal text) and keep
+// `npm run db:drift` passing. Full rules: docs/ARCHITECTURE.md §4.
+// Raw spatial SQL lives only in src/repositories/geo.repository.ts.
 
 generator client {
   provider = "prisma-client"
@@ -8,4 +17,116 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+enum Status {
+  ACTIVE
+  CLOSED
+}
+
+enum TrailerType {
+  DRY_VAN
+  REEFER
+  FLATBED
+}
+
+enum LoadState {
+  EMPTY
+  PARTIAL
+}
+
+enum TruckPricingBasis {
+  FLAT
+  PER_LOADED_MILE
+}
+
+/// Stranded truck capacity: a specific movement the carrier is already planning.
+model TruckLeg {
+  id           String @id @default(cuid())
+  companyName  String
+  contactName  String
+  contactEmail String
+  status       Status @default(ACTIVE)
+
+  originLabel      String
+  originLat        Float
+  originLng        Float
+  originGeog       Unsupported("geography(Point,4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(\"originLng\", \"originLat\"), 4326))::geography"))
+  destinationLabel String
+  destinationLat   Float
+  destinationLng   Float
+  destinationGeog  Unsupported("geography(Point,4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(\"destinationLng\", \"destinationLat\"), 4326))::geography"))
+
+  departureEarliest DateTime  @db.Timestamptz(3)
+  departureLatest   DateTime  @db.Timestamptz(3)
+  arriveBy          DateTime? @db.Timestamptz(3)
+
+  loadState          LoadState
+  trailerType        TrailerType
+  totalPallets       Int
+  totalWeightLbs     Int
+  committedPallets   Int         @default(0)
+  committedWeightLbs Int         @default(0)
+  maxDetourMiles     Int         @default(100)
+
+  pricingBasis TruckPricingBasis
+  priceAmount  Decimal           @db.Decimal(10, 2)
+  notes        String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([status, trailerType, departureEarliest])
+  @@index([originGeog], type: Gist)
+  @@index([destinationGeog], type: Gist)
+}
+
+/// A shipper's transport need.
+model TransportRequest {
+  id           String @id @default(cuid())
+  companyName  String
+  contactName  String
+  contactEmail String
+  status       Status @default(ACTIVE)
+
+  pickupLabel  String
+  pickupLat    Float
+  pickupLng    Float
+  pickupGeog   Unsupported("geography(Point,4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(\"pickupLng\", \"pickupLat\"), 4326))::geography"))
+  dropoffLabel String
+  dropoffLat   Float
+  dropoffLng   Float
+  dropoffGeog  Unsupported("geography(Point,4326)")? @default(dbgenerated("(st_setsrid(st_makepoint(\"dropoffLng\", \"dropoffLat\"), 4326))::geography"))
+
+  pickupEarliest DateTime  @db.Timestamptz(3)
+  pickupLatest   DateTime  @db.Timestamptz(3)
+  deliverBy      DateTime? @db.Timestamptz(3)
+
+  trailerType TrailerType
+  pallets     Int
+  weightLbs   Int
+  maxBudget   Decimal?    @db.Decimal(10, 2)
+  notes       String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([pickupGeog], type: Gist)
+  @@index([dropoffGeog], type: Gist)
+}
+
+/// Cached geocoder results: one row per result, ordered by rank. Only label/lat/lng + provider
+/// name are stored, never vendor payloads. Keyed by provider so switching geocoders never serves
+/// another provider's results.
+model GeocodeCache {
+  id              String   @id @default(cuid())
+  provider        String
+  normalizedQuery String
+  rank            Int
+  label           String
+  lat             Float
+  lng             Float
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([provider, normalizedQuery, rank])
 }

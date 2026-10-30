@@ -21,6 +21,7 @@
     "test:integration": "npm run test:integration -w apps/api",
     "build": "npm run build -w packages/shared && npm run build -w apps/api -w apps/web",
     "db:migrate": "npm run db:migrate -w apps/api",
+    "db:drift": "npm run db:drift -w apps/api",
     "db:seed": "npm run db:seed -w apps/api"
   },
   "devDependencies": {

@@ -66,5 +66,11 @@ jobs:
       - name: Apply migrations
         run: npm exec -w apps/api -- prisma migrate deploy
 
+      # The service DB is fresh, so after `migrate deploy` it is exactly "all migrations replayed".
+      # Fails (exit 2) if schema.prisma and the migrations disagree, e.g. a forgotten migration or
+      # a *Geog dbgenerated string that no longer matches the hand-edited generated column.
+      - name: Migration drift check
+        run: npm run db:drift
+
       - name: Integration tests (PostGIS)
         run: npm run test:integration

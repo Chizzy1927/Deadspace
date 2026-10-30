@@ -104,6 +104,8 @@ Error shape: `{ error: { code, message, details? } }`. Validation failures retur
 
 Each record has `id` (cuid), `companyName`, `contactName`, `contactEmail`, `status` (ACTIVE | CLOSED), `createdAt` and `updatedAt`. Each location is stored as `*Label`, `*Lat`, `*Lng` plus a **generated PostGIS column**: `*Geog geography(Point,4326) GENERATED ALWAYS AS (ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography) STORED`, with a GiST index. Prisma declares these as `Unsupported("geography(Point,4326)")`, and they're added in a hand-edited migration that also runs `CREATE EXTENSION postgis`. App code writes lat/lng normally and the database maintains the geography.
 
+**Generated-column migration rules.** Prisma has no generated-column support: it introspects the generation expression as a column default, so each `*Geog` field is declared `Unsupported("geography(Point,4326)")? @default(dbgenerated("…"))` with the expression exactly as Postgres formats it (Prisma compares the text literally). Unsupported fields are absent from the Prisma client, so app code can't write them. Any migration that adds a `*Geog` column or touches its lat/lng sources must be hand-edited: new columns as `GENERATED ALWAYS AS (…) STORED`, renames as `RENAME COLUMN` (never Prisma's drop + add), expression changes as `ALTER COLUMN … SET EXPRESSION AS (…)` (Postgres 17+). Copy the `dbgenerated` string from `prisma db pull --print`; never retype it. Prisma's generated SQL for these cases fails loudly rather than silently (Postgres rejects it). `npm run db:drift` (run in CI against a freshly migrated database) fails if the schema and the migrations disagree.
+
 **Enums:** `TrailerType` (DRY_VAN, REEFER, FLATBED) · `LoadState` (EMPTY, PARTIAL) · `TruckPricingBasis` (FLAT, PER_LOADED_MILE) · `StorageUnit` (PALLET_POSITION, FLOOR_SQFT) · `PricingPeriod` (DAY, WEEK, MONTH) · `Status`.
 
 **TruckLeg** (stranded truck capacity: a movement the carrier is already planning)
@@ -112,13 +114,14 @@ Each record has `id` (cuid), `companyName`, `contactName`, `contactEmail`, `stat
 - departureEarliest, departureLatest, arriveBy? (fixed next commitment)
 - loadState, trailerType
 - totalPallets, totalWeightLbs, committedPallets (0 if EMPTY), committedWeightLbs (0 if EMPTY)
-- maxDetourMiles (default 100)
+- maxDetourMiles (default 100, at most 300)
 - pricingBasis, priceAmount (USD); notes
-- Validation guards against load-board drift: destination is required; the departure window is at most 72h and at most 30 days ahead; committed < total.
+- Validation guards against load-board drift: destination is required and at least 10 straight-line miles from origin; the departure window is at most 72h and at most 30 days ahead; committed < total.
+- These numbers are **V1 product-policy defaults** (`TRANSPORT_POLICY` in `packages/shared`), tunable and shared by form and API. They are not data-integrity rules and not derived from data. The minimum-distance check uses a haversine great-circle distance (within 0.5% of PostGIS, asserted in integration tests). It replaces exact coordinate equality, which differently geocoded points in the same place would slip past.
 
 **TransportRequest**
 
-- pickup*, dropoff*, pickupEarliest, pickupLatest, deliverBy?
+- pickup*, dropoff* (at least 10 straight-line miles apart, same policy), pickupEarliest, pickupLatest, deliverBy?
 - trailerType, pallets, weightLbs, maxBudget?; notes
 
 **WarehouseSpace** (genuinely idle capacity)
@@ -135,7 +138,9 @@ Each record has `id` (cuid), `companyName`, `contactName`, `contactEmail`, `stat
 - unit, quantity, startDate, endDate
 - needsTemperatureControl, needsFoodGrade, needsHazmat, maxBudgetTotal?; notes
 
-**GeocodeCache:** normalizedQuery (unique), label, lat, lng, provider, createdAt.
+**GeocodeCache:** one row per result: provider, normalizedQuery, rank, label, lat, lng, createdAt; unique `(provider, normalizedQuery, rank)` so autocomplete lists are served whole and switching geocoders never serves another provider's results. Empty results aren't cached; no expiry in V1.
+
+Money columns (`priceAmount`, `maxBudget`, …) are `Decimal(10,2)`; repositories convert to `number` at the API boundary. Timestamps are `timestamptz`. Integration tests run against a separate `*_test` database.
 
 Plain B-tree indexes on `(status, trailerType, departureEarliest)` and `(status, unit, availableFrom)`; GiST indexes on all geography columns. Later, a nullable `ownerId` foreign key can be added when auth arrives.
 
@@ -180,6 +185,8 @@ Notation: O = leg origin, X = leg destination, P = pickup, D = dropoff, d() = st
 | Timing               | 0.15           | 1 if the leg departure falls inside the pickup window; otherwise decays linearly with hours of mismatch                                                 |
 
 Ties are broken by fewer additional miles, then lower price. Results are capped at 20.
+
+> **Pending change (Phase 3):** the route-efficiency denominator will become `min(maxDetourMiles, ROUTE_EFFICIENCY_REFERENCE_MILES)` so a carrier's declared limit can't inflate its score. See §9, Phase 3.
 
 ### Warehouse space ↔ Storage request
 
@@ -251,6 +258,8 @@ Each phase ends working, verified and committed.
 - Exit criterion: a user can submit a transport request in the browser and see ranked, real matches from the database.
 
 **Phase 3, refine truck matching.** Full metrics (additional miles, empty miles recovered, utilisation, est. price), timing feasibility, the full weighted score from `config.ts`, reason generation, a ScoreBreakdown and metrics UI, "est." labelling and tooltip, and expanded unit tests (edge cases, tie-breaking, EMPTY vs. PARTIAL behaviour). Also polish the guided carrier form (trailer defaults, fill bar, detour slider).
+
+- **Required follow-up (decided in the Phase 1 review; deliberately not built yet): route-efficiency normalisation.** The §5 formula `1 − estAdditionalMiles / maxDetourMiles` divides by the carrier's _own_ declared limit, so a higher limit inflates that leg's score (at 300, a 150-mile detour scores 0.5; at 100 the same leg is infeasible). In Phase 3, normalise against `min(maxDetourMiles, ROUTE_EFFICIENCY_REFERENCE_MILES)` from `matching/config.ts`, so a carrier's limit only widens feasibility and never boosts ranking. Add unit tests showing two legs with identical geometry but different `maxDetourMiles` get the same route-efficiency component (below the reference). Update this section's score table and `/how-matching-works` to match.
 
 **Phase 4, warehouse flow.** Schemas, migration and seed for `WarehouseSpace` and `StorageRequest`; `matching/warehouse.ts` plus tests; endpoints; warehouse listing form and storage request form; storage matches page reusing the match components.
 
