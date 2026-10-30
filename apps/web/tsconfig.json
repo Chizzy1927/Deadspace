@@ -12,5 +12,5 @@
     // Resolve @deadspace/shared to its TypeScript source (Vite does the same via resolve.conditions).
     "customConditions": ["@deadspace/source"]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "test", "vite.config.ts"]
 }

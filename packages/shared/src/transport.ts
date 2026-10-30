@@ -214,3 +214,49 @@ export const TransportRequestSchema = ContactSchema.extend({
   notes: z.string().nullable(),
 });
 export type TransportRequest = z.infer<typeof TransportRequestSchema>;
+
+/** Share of a trailer's capacity in use, 0–1, before and after adding the request's load. */
+const UtilisationSchema = z.object({ before: z.number(), after: z.number() });
+
+/**
+ * Metrics for one feasible truck-leg match. Every `est*` mileage is a road-distance estimate
+ * (straight-line × road factor), not a routed distance, and must be labelled "est." in the UI.
+ */
+export const TruckMatchMetricsSchema = z.object({
+  /** The carrier's planned origin → destination leg. */
+  estDirectLegMiles: z.number(),
+  /** Extra miles the carrier drives to serve the request. */
+  estAdditionalMiles: z.number(),
+  /** Pickup → dropoff miles with the request's freight on board. */
+  estLoadedMiles: z.number(),
+  /** EMPTY legs only: planned empty miles that now carry freight. Null for PARTIAL legs. */
+  estEmptyMilesRecovered: z.number().nullable(),
+  sparePallets: z.number().int(),
+  spareWeightLbs: z.number().int(),
+  palletUtilisation: UtilisationSchema,
+  weightUtilisation: UtilisationSchema,
+  /** The dimension with the higher utilisation after the match. */
+  limitingCapacity: z.enum(['PALLETS', 'WEIGHT']),
+  /** USD, from the listing's pricing basis. */
+  estPrice: z.number(),
+});
+export type TruckMatchMetrics = z.infer<typeof TruckMatchMetricsSchema>;
+
+/** One ranked truck-leg match for a transport request. */
+export const TransportMatchSchema = z.object({
+  leg: TruckLegSchema,
+  /** 0–100. */
+  score: z.number().int().min(0).max(100),
+  /** Score components, each 0–1. */
+  breakdown: z.object({ routeEfficiency: z.number() }),
+  metrics: TruckMatchMetricsSchema,
+  reasons: z.array(z.string()),
+});
+export type TransportMatch = z.infer<typeof TransportMatchSchema>;
+
+/** GET /api/transport-requests/:id/matches. */
+export const TransportMatchesResponseSchema = z.object({
+  request: TransportRequestSchema,
+  matches: z.array(TransportMatchSchema),
+});
+export type TransportMatchesResponse = z.infer<typeof TransportMatchesResponseSchema>;

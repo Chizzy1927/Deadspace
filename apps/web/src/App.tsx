@@ -1,43 +1,22 @@
-import type { HealthResponse } from '@deadspace/shared';
-import { useEffect, useState } from 'react';
-import { fetchHealth } from './api/health';
+import { Link, Outlet } from 'react-router';
 
-type HealthState =
-  { kind: 'loading' } | { kind: 'loaded'; health: HealthResponse } | { kind: 'error'; message: string };
-
-function describe(state: HealthState): string {
-  switch (state.kind) {
-    case 'loading':
-      return 'Checking API…';
-    case 'error':
-      return `API unreachable: ${state.message}`;
-    case 'loaded':
-      return state.health.database.status === 'ok'
-        ? `API ok · PostGIS ${state.health.database.postgisVersion}`
-        : `API up · ${state.health.database.message}`;
-  }
-}
-
-// Phase 0 placeholder: proves web → API → PostGIS wiring. Real pages arrive in later phases.
+/** App shell. Minimal Phase 2 chrome; the real navigation arrives with the landing flow (Phase 5). */
 export function App() {
-  const [state, setState] = useState<HealthState>({ kind: 'loading' });
-
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchHealth(controller.signal)
-      .then((health) => setState({ kind: 'loaded', health }))
-      .catch((err: unknown) => {
-        if (controller.signal.aborted) return;
-        setState({ kind: 'error', message: err instanceof Error ? err.message : 'unknown error' });
-      });
-    return () => controller.abort();
-  }, []);
-
   return (
-    <main>
-      <h1>DeadSpace</h1>
-      <p>Stranded truck legs and idle warehouse space, matched to shippers.</p>
-      <p role="status">{describe(state)}</p>
-    </main>
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-4xl items-center justify-between px-4 py-3">
+          <Link to="/" className="text-lg font-semibold">
+            DeadSpace
+          </Link>
+          <Link to="/request/transport" className="text-sm text-blue-700 hover:underline">
+            Request transport
+          </Link>
+        </div>
+      </header>
+      <main className="mx-auto max-w-4xl px-4 py-6">
+        <Outlet />
+      </main>
+    </div>
   );
 }

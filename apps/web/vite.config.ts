@@ -1,8 +1,9 @@
+import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defaultClientConditions, defineConfig } from 'vite';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   // VITE_* variables come from the repo-root .env shared with the API.
   envDir: '../..',
   resolve: {

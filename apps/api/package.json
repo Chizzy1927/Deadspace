@@ -5,7 +5,7 @@
   "type": "module",
   "description": "DeadSpace REST API (Express).",
   "scripts": {
-    "dev": "tsx watch --env-file-if-exists=../../.env --conditions=@deadspace/source src/server.ts",
+    "dev": "node --watch --env-file-if-exists=../../.env --conditions=@deadspace/source --import tsx src/server.ts",
     "build": "prisma generate && tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=../../.env dist/server.js",
     "typecheck": "tsc --noEmit",
@@ -22,6 +22,7 @@
     "@prisma/client": "^7.10.1",
     "cors": "^2.8.6",
     "express": "^5.3.0",
+    "express-rate-limit": "^8.7.2",
     "zod": "^4.6.7"
   },
   "devDependencies": {

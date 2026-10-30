@@ -1,8 +1,18 @@
 import { z } from 'zod';
 
 /** Machine-readable error codes returned in `{ error: { code } }`. */
-export const ApiErrorCode = z.enum(['VALIDATION_ERROR', 'NOT_FOUND', 'INTERNAL_ERROR']);
+export const ApiErrorCode = z.enum([
+  'VALIDATION_ERROR',
+  'NOT_FOUND',
+  'RATE_LIMITED',
+  'UPSTREAM_ERROR',
+  'INTERNAL_ERROR',
+]);
 export type ApiErrorCode = z.infer<typeof ApiErrorCode>;
+
+/** `details` of a VALIDATION_ERROR: one entry per issue; `path` is dot-joined (e.g. "pickup.lat"). */
+export const ValidationIssuesSchema = z.array(z.object({ path: z.string(), message: z.string() }));
+export type ValidationIssues = z.infer<typeof ValidationIssuesSchema>;
 
 /** Every API error response has this shape. */
 export const ApiErrorResponseSchema = z.object({

@@ -1,4 +1,4 @@
-import type { CreateTransportRequestInput } from '@deadspace/shared';
+import type { CreateTransportRequestInput, TransportRequest as TransportRequestDto } from '@deadspace/shared';
 import type { PrismaClient } from '../db.js';
 import type { Prisma, TransportRequest } from '../generated/prisma/client.js';
 
@@ -21,4 +21,31 @@ export function createTransportRequest(
   input: CreateTransportRequestInput,
 ): Promise<TransportRequest> {
   return prisma.transportRequest.create({ data: toTransportRequestCreateData(input) });
+}
+
+export function findTransportRequestById(prisma: PrismaClient, id: string): Promise<TransportRequest | null> {
+  return prisma.transportRequest.findUnique({ where: { id } });
+}
+
+/** Row → API shape: locations regrouped, Decimal money as number, dates as ISO strings. */
+export function toTransportRequestDto(row: TransportRequest): TransportRequestDto {
+  return {
+    id: row.id,
+    status: row.status,
+    companyName: row.companyName,
+    contactName: row.contactName,
+    contactEmail: row.contactEmail,
+    pickup: { label: row.pickupLabel, lat: row.pickupLat, lng: row.pickupLng },
+    dropoff: { label: row.dropoffLabel, lat: row.dropoffLat, lng: row.dropoffLng },
+    pickupEarliest: row.pickupEarliest.toISOString(),
+    pickupLatest: row.pickupLatest.toISOString(),
+    deliverBy: row.deliverBy?.toISOString() ?? null,
+    trailerType: row.trailerType,
+    pallets: row.pallets,
+    weightLbs: row.weightLbs,
+    maxBudget: row.maxBudget?.toNumber() ?? null,
+    notes: row.notes,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
 }
