@@ -26,8 +26,9 @@ jobs:
           POSTGRES_DB: deadspace_test
         ports:
           - 5432:5432
+        # TCP probe: passes only after first-start init (PostGIS install) finishes; see docker-compose.yml.
         options: >-
-          --health-cmd "pg_isready -U deadspace -d deadspace_test"
+          --health-cmd "pg_isready -h 127.0.0.1 -U deadspace -d deadspace_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
