@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: deadspace
+          POSTGRES_PASSWORD: deadspace
+          POSTGRES_DB: deadspace_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U deadspace -d deadspace_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://deadspace:deadspace@localhost:5432/deadspace_test
+      GEOCODER: mock
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Explicit, so typecheck doesn't depend on npm running the api postinstall script.
+      - name: Generate Prisma client
+        run: npm exec -w apps/api -- prisma generate
+
+      - name: Lint (ESLint + Prettier)
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Apply migrations
+        run: npm exec -w apps/api -- prisma migrate deploy
+
+      - name: Integration tests (PostGIS)
+        run: npm run test:integration

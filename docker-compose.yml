@@ -1,0 +1,22 @@
+# Local development database: PostgreSQL 17 + PostGIS 3.5.
+# Host port 5433 avoids clashing with a natively installed PostgreSQL on 5432.
+# The image enables the postgis extension in POSTGRES_DB on first start.
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_USER: deadspace
+      POSTGRES_PASSWORD: deadspace # local development only
+      POSTGRES_DB: deadspace
+    ports:
+      - '5433:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U deadspace -d deadspace']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:

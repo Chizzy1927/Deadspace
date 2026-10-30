@@ -1,0 +1,11 @@
+// DeadSpace database schema. Domain tables arrive in Phase 1.
+// The datasource URL is configured in prisma.config.ts (Prisma 7).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}

@@ -1,0 +1,18 @@
+# Normalize all text files to LF in the repo and the working tree, regardless of
+# core.autocrlf, so Git on Windows and Prettier (endOfLine: lf) agree.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.woff binary
+*.woff2 binary
