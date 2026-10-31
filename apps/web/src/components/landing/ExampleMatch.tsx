@@ -34,7 +34,7 @@ export function ExampleMatch() {
               Top match for 6 pallets, Dallas to Houston, from the demo data. Not a live listing.
             </span>
           </p>
-          <MatchCard match={match} rank={1} headingLevel={3} />
+          <MatchCard match={match} rank={1} headingLevel={3} showContact={false} />
           <div className="mt-3">
             <EstimateNote />
           </div>

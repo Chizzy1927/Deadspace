@@ -57,8 +57,10 @@ export function SiteHeader() {
             aria-label="Main"
             className={`${open ? 'flex' : 'hidden'} w-full flex-col gap-4 lg:flex lg:w-auto lg:flex-row lg:gap-8`}
           >
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className={groupLabelClass}>I need capacity</span>
+            <div role="group" aria-labelledby="nav-need-label" className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span id="nav-need-label" className={groupLabelClass}>
+                I need capacity
+              </span>
               <NavLink to="/request/transport" className={linkClass} onClick={close}>
                 Request transport
               </NavLink>
@@ -66,8 +68,10 @@ export function SiteHeader() {
                 Request storage
               </NavLink>
             </div>
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span className={groupLabelClass}>I have capacity</span>
+            <div role="group" aria-labelledby="nav-have-label" className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span id="nav-have-label" className={groupLabelClass}>
+                I have capacity
+              </span>
               <NavLink to="/list/truck" className={linkClass} onClick={close}>
                 List a truck leg
               </NavLink>

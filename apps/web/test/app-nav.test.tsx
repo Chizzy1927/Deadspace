@@ -50,3 +50,13 @@ describe('routeTitle', () => {
     expect(routeTitle([{}, { handle: {} }])).toBe('DeadSpace');
   });
 });
+
+describe('SiteHeader groups', () => {
+  it('labels each link group by its need/have heading', () => {
+    const html = render('/');
+    expect(html).toMatch(/role="group"[^>]*aria-labelledby="nav-need-label"/);
+    expect(html).toMatch(/id="nav-need-label"[^>]*>I need capacity</);
+    expect(html).toMatch(/role="group"[^>]*aria-labelledby="nav-have-label"/);
+    expect(html).toMatch(/id="nav-have-label"[^>]*>I have capacity</);
+  });
+});

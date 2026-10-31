@@ -64,3 +64,10 @@ describe('buildExampleMatch', () => {
     expect(leg.departureLatest).toBe('2026-06-03T19:00:00.000Z');
   });
 });
+
+describe('example match contact', () => {
+  it('does not offer a mailto link to the fictional carrier', () => {
+    expect(html).not.toContain('mailto:');
+    expect(html).not.toContain('Contact Marcus');
+  });
+});
