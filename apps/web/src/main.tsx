@@ -6,7 +6,7 @@ import { ApiError } from './api/client';
 import { App } from './App';
 import { ContainedLayout } from './components/ContainedLayout';
 import './index.css';
-import { HomePage } from './pages/HomePage';
+import { LandingPage } from './pages/LandingPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { StorageMatchesPage } from './pages/StorageMatchesPage';
 import { StorageRequestPage } from './pages/StorageRequestPage';
@@ -22,10 +22,10 @@ const router = createBrowserRouter([
     path: '/',
     element: <App />,
     children: [
+      { index: true, element: <LandingPage />, handle: { title: 'Stranded truck and warehouse capacity' } },
       {
         element: <ContainedLayout />,
         children: [
-          { index: true, element: <HomePage />, handle: { title: 'Stranded truck and warehouse capacity' } },
           { path: 'request/transport', element: <TransportRequestPage />, handle: { title: 'Request transport' } },
           {
             path: 'requests/transport/:id/matches',

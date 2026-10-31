@@ -4,8 +4,18 @@ import { Estimate } from './Estimate';
 import { Highlights, Metric } from './MatchParts';
 import { ScoreBreakdown } from './ScoreBreakdown';
 
-export function MatchCard({ match, rank }: { match: TransportMatch; rank: number }) {
+export function MatchCard({
+  match,
+  rank,
+  headingLevel = 2,
+}: {
+  match: TransportMatch;
+  rank: number;
+  /** Level of the company-name heading, so the card nests correctly under the page's headings. */
+  headingLevel?: 2 | 3;
+}) {
   const { leg, metrics, score, highlights, reasons } = match;
+  const Heading = headingLevel === 3 ? 'h3' : 'h2';
   const limiting = metrics.limitingCapacity === 'WEIGHT' ? metrics.weightUtilisation : metrics.palletUtilisation;
 
   return (
@@ -16,7 +26,7 @@ export function MatchCard({ match, rank }: { match: TransportMatch; rank: number
       <header className="flex items-start justify-between gap-4">
         <div>
           <p className="text-sm text-slate-500">#{rank}</p>
-          <h2 className="text-lg font-semibold">{leg.companyName}</h2>
+          <Heading className="text-lg font-semibold">{leg.companyName}</Heading>
           <p className="text-slate-700">
             {leg.origin.label} → {leg.destination.label}
           </p>
