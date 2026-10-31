@@ -4,8 +4,9 @@ import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router';
 import { ApiError } from './api/client';
 import { App } from './App';
+import { ContainedLayout } from './components/ContainedLayout';
 import './index.css';
-import { HomePage } from './pages/HomePage';
+import { LandingPage } from './pages/LandingPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { StorageMatchesPage } from './pages/StorageMatchesPage';
 import { StorageRequestPage } from './pages/StorageRequestPage';
@@ -21,16 +22,33 @@ const router = createBrowserRouter([
     path: '/',
     element: <App />,
     children: [
-      { index: true, element: <HomePage /> },
-      { path: 'request/transport', element: <TransportRequestPage /> },
-      { path: 'requests/transport/:id/matches', element: <TransportMatchesPage /> },
-      { path: 'list/truck', element: <TruckLegListingPage /> },
-      { path: 'listings/truck/:id', element: <TruckLegConfirmationPage /> },
-      { path: 'request/storage', element: <StorageRequestPage /> },
-      { path: 'requests/storage/:id/matches', element: <StorageMatchesPage /> },
-      { path: 'list/warehouse', element: <WarehouseSpaceListingPage /> },
-      { path: 'listings/warehouse/:id', element: <WarehouseSpaceConfirmationPage /> },
-      { path: '*', element: <NotFoundPage /> },
+      { index: true, element: <LandingPage />, handle: { title: 'Spare truck space and idle warehouse space' } },
+      {
+        element: <ContainedLayout />,
+        children: [
+          { path: 'request/transport', element: <TransportRequestPage />, handle: { title: 'Request transport' } },
+          {
+            path: 'requests/transport/:id/matches',
+            element: <TransportMatchesPage />,
+            handle: { title: 'Transport matches' },
+          },
+          { path: 'list/truck', element: <TruckLegListingPage />, handle: { title: 'List a truck leg' } },
+          { path: 'listings/truck/:id', element: <TruckLegConfirmationPage />, handle: { title: 'Truck leg listed' } },
+          { path: 'request/storage', element: <StorageRequestPage />, handle: { title: 'Request storage' } },
+          {
+            path: 'requests/storage/:id/matches',
+            element: <StorageMatchesPage />,
+            handle: { title: 'Storage matches' },
+          },
+          { path: 'list/warehouse', element: <WarehouseSpaceListingPage />, handle: { title: 'List warehouse space' } },
+          {
+            path: 'listings/warehouse/:id',
+            element: <WarehouseSpaceConfirmationPage />,
+            handle: { title: 'Warehouse space listed' },
+          },
+          { path: '*', element: <NotFoundPage />, handle: { title: 'Page not found' } },
+        ],
+      },
     ],
   },
 ]);

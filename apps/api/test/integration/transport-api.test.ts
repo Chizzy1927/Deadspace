@@ -1,5 +1,6 @@
 import {
   ApiErrorResponseSchema,
+  buildDemoTransportRequest,
   TransportMatchesResponseSchema,
   TransportRequestSchema,
   TruckLegSchema,
@@ -287,5 +288,28 @@ describe('seeded scenario: Dallas → Houston (real PostGIS + deterministic seed
       ['08', ['NEAR_ROUTE', 'COMFORTABLE_SCHEDULE']],
       ['14', ['LARGE_DETOUR', 'COMFORTABLE_SCHEDULE']],
     ]);
+  });
+});
+
+describe('demo transport request (real PostGIS + deterministic seed)', () => {
+  // The demo request is built at demo time; a seed run up to one UTC midnight earlier must still match.
+  it.each([
+    ['the day it was seeded', 0],
+    ['a day after it was seeded', 24],
+  ])('finds on-route seeded trucks %s', async (_label, hoursLater) => {
+    const seed = await buildSeedTruckLegs(defaultSeedAnchor(new Date()), new MockGeocoder());
+    await prisma.truckLeg.createMany({ data: seed.map(({ id, input }) => ({ id, ...toTruckLegCreateData(input) })) });
+
+    const demoNow = new Date(Date.now() + hoursLater * 3_600_000);
+    const created = await request(app).post('/api/transport-requests').send(buildDemoTransportRequest(demoNow));
+    expect(created.status).toBe(201);
+    const res = await request(app).get(
+      `/api/transport-requests/${TransportRequestSchema.parse(created.body).id}/matches`,
+    );
+    const { matches } = TransportMatchesResponseSchema.parse(res.body);
+
+    const keys = matches.map((m) => m.leg.id.replace('seed-truck-leg-', ''));
+    expect(keys.length).toBeGreaterThanOrEqual(3);
+    expect(keys.slice(0, 3)).toEqual(expect.arrayContaining(['01', '02', '07']));
   });
 });

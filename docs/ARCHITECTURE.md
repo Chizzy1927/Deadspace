@@ -26,18 +26,20 @@ Trucks often run empty or partly loaded on legs they are already planning to dri
 ## 2. Frontend pages & user flow
 
 ```
-/                          Landing
-/start                     [ I Have Capacity ]   [ I Need Capacity ]
-  ├─ /have                 Truck leg | Warehouse space
-  │    ├─ /list/truck            "Fill your empty or part-empty leg" (carrier form)
-  │    └─ /list/warehouse        "List idle warehouse space"
-  │         → /listings/:kind/:id     Confirmation + summary
-  └─ /need                 Transportation | Storage
-       ├─ /request/transport
-       └─ /request/storage
-            → /requests/:kind/:id/matches   Ranked matches
-/how-matching-works        Plain-language explanation of filters, metrics, weights
+/                          Landing (also the explainer; see below)
+  #problem · #how-it-works · #get-started (need/have) · #example-match
+  ├─ I have capacity ──────► /list/truck       "Fill your empty or part-empty leg" (carrier form)
+  │                          /list/warehouse   "List idle warehouse space"
+  │                            → /listings/:kind/:id        Confirmation + summary
+  └─ I need capacity ──────► /request/transport
+                             /request/storage
+                               → /requests/:kind/:id/matches   Ranked matches
+                             (append ?example=1 to a request route to pre-fill the demo request)
 ```
+
+**Decision (Phase 5): the explanatory concepts live on the landing page, not on separate routes.** The original plan had `/start`, `/have`, `/need` and `/how-matching-works` pages. They are now sections of `/` with direct CTAs: the "I need capacity / I have capacity" choice is the `#get-started` 2×2 grid linking straight into the four form routes, and the plain-language matching explanation is the `#example-match` section. The hero's two buttons jump to the need/have cards in that grid (`#need-capacity`, `#have-capacity`). A separate `/how-matching-works` page is deferred (see `docs/TODO.md`).
+
+**Request-form examples.** Both request forms have a "Fill with an example" button, and `?example=1` on the route does the same on load. It fills the form and does not submit. The payloads come from `packages/shared/src/demo.ts`, which anchors dates on `nextUtcMidnight` exactly as the seed does (see Phase 5 "Demo data" in §9).
 
 **Carrier truck form.** This is the most important UX in the product. It is a short guided form written in carrier language, not shipper language:
 
@@ -53,7 +55,7 @@ After submitting, the carrier lands on `/listings/truck/:id`, which shows the le
 
 **Matches page:** a request summary, then ranked cards showing the overall score, a breakdown bar, key metrics (§5), plain-language reasons, the estimated price and a mailto contact link. Includes empty, loading and error states. All road distances carry an "est." label with a tooltip: _"Estimated from straight-line distance × 1.2. Not a routed road distance."_
 
-**Landing page:** problem, solution, how it works, truck and warehouse cards, and how ranking works. **It contains no numerical claims unless backed by a real, linked citation** verified at implementation time, for example published research on empty-mile rates. If a claim can't be sourced, the copy stays qualitative. There are no invented stats, testimonials or "trusted by" logos.
+**Landing page (built in Phase 5):** hero, problem, how it works, a need/have chooser, and an "Example match" section that renders the real `MatchCard` from a typed static fixture (so it never depends on the API being up). **It contains no numerical claims** unless backed by a real, linked citation; none are used, and the copy stays qualitative. There are no invented stats, testimonials or "trusted by" logos. A footer states that this is a demo build with no accounts.
 
 ---
 
@@ -154,7 +156,7 @@ Plain B-tree indexes on `(status, trailerType, departureEarliest)` and `(status,
 
 ## 5. V1 matching algorithm
 
-The principles are **feasibility first**, through hard constraints, then **ranking among feasible matches only**, with **route efficiency as the dominant truck signal**. All weights and thresholds live in `matching/config.ts`. They're **documented as tunable heuristic defaults, not as scientifically optimal values**, both in the README and on `/how-matching-works`.
+The principles are **feasibility first**, through hard constraints, then **ranking among feasible matches only**, with **route efficiency as the dominant truck signal**. All weights and thresholds live in `matching/config.ts`. They're **documented as tunable heuristic defaults, not as scientifically optimal values**, both in the README and in the landing page's matching section.
 
 **Distance convention:** PostGIS returns straight-line (geodesic) miles. Road-mile estimates are `straightLine × ROAD_FACTOR` (default 1.2). Every road-mile figure in API responses uses an `est` prefix in field names (e.g. `estAdditionalMiles`), and the UI labels it "est.".
 
@@ -240,7 +242,7 @@ Without a budget, the median reference is relative to the feasible set, so addin
 ```
 deadspace/
 ├─ apps/
-│  ├─ web/src/  pages/ · components/{ui,landing,forms,matches}/ (LocationInput, TrailerFillBar, MatchCard, ScoreBreakdown, MetricPill) · api/ · lib/
+│  ├─ web/src/  pages/ · components/ (LocationInput, MatchCard, ScoreBreakdown, StorageMatchCard, SiteHeader…) · components/landing/ · forms/ · api/
 │  └─ api/
 │     ├─ src/  routes/ · services/ · repositories/ · matching/ · geocoding/ · middleware/ · app.ts · server.ts
 │     ├─ prisma/  schema.prisma · migrations/ (incl. PostGIS extension + generated geog columns) · seed.ts
@@ -249,7 +251,8 @@ deadspace/
 ├─ docker-compose.yml          postgis/postgis:17-3.5
 ├─ .github/workflows/ci.yml
 ├─ .env.example                DATABASE_URL, GEOCODER, GEOAPIFY_API_KEY, WEB_ORIGIN, VITE_API_URL
-└─ package.json · tsconfig.base.json · eslint/prettier · README.md
+├─ docs/  ARCHITECTURE.md · TODO.md · screenshots/
+└─ README.md · package.json · tsconfig.base.json · eslint/prettier
 ```
 
 ---
@@ -286,13 +289,15 @@ Each phase ends working, verified and committed.
 
 **Phase 3, refine truck matching.** The full weighted score from `config.ts` (capacity, price and timing components), a ScoreBreakdown UI, the "est." tooltip copy, and expanded unit tests. Metrics, reasons, timing feasibility and EMPTY/PARTIAL behaviour were already built in Phase 2. Also build and polish the guided carrier form (trailer defaults, live spare-room text, detour slider) and its confirmation page (built in Phase 3, see §2).
 
-- **Route-efficiency normalisation (decided in the Phase 1 review; built in Phase 3 with a fixed `ROUTE_EFFICIENCY_REFERENCE_MILES` reference, see §5).** Original rationale: The §5 formula `1 − estAdditionalMiles / maxDetourMiles` divides by the carrier's _own_ declared limit, so a higher limit inflates that leg's score (at 300, a 150-mile detour scores 0.5; at 100 the same leg is infeasible). In Phase 3, normalise against `min(maxDetourMiles, ROUTE_EFFICIENCY_REFERENCE_MILES)` from `matching/config.ts`, so a carrier's limit only widens feasibility and never boosts ranking. Add unit tests showing two legs with identical geometry but different `maxDetourMiles` get the same route-efficiency component (below the reference). Update this section's score table and `/how-matching-works` to match.
+- **Route-efficiency normalisation (decided in the Phase 1 review; built in Phase 3 with a fixed `ROUTE_EFFICIENCY_REFERENCE_MILES` reference, see §5).** Original rationale: The §5 formula `1 − estAdditionalMiles / maxDetourMiles` divides by the carrier's _own_ declared limit, so a higher limit inflates that leg's score (at 300, a 150-mile detour scores 0.5; at 100 the same leg is infeasible). In Phase 3, normalise against `min(maxDetourMiles, ROUTE_EFFICIENCY_REFERENCE_MILES)` from `matching/config.ts`, so a carrier's limit only widens feasibility and never boosts ranking. Add unit tests showing two legs with identical geometry but different `maxDetourMiles` get the same route-efficiency component (below the reference). Update this section's score table and the landing page's matching copy to match.
 
 **Phase 4, warehouse flow.** Schemas, migration and seed for `WarehouseSpace` and `StorageRequest`; `matching/warehouse.ts` plus tests; endpoints; warehouse listing form and storage request form; storage matches page reusing the match components.
 
-**Phase 5, landing & product polish.** Landing page with only qualitative claims or verified, cited statistics; the `/start` → `/have` | `/need` flow; `/how-matching-works`; confirmation pages; responsive layout, accessibility and empty, loading and error states; geocoder attribution.
+**Phase 5, landing & demo experience.** App shell (header, nav, skip link, per-route titles and meta), qualitative landing page, "Fill with an example" on both request forms with `?example=1` deep links, shared demo-request builders with seeded integration tests, a transport-form focus-order fix, the README and screenshots. Per the §2 decision, `/start`, `/have`, `/need` and `/how-matching-works` are landing sections, not routes. Confirmation pages, empty/loading/error states and geocoder attribution already shipped in earlier phases.
 
-**Phase 6, ship.** README (pitch, architecture diagram, matching write-up with the tunable-weights disclaimer, honest security note, setup), deployment to Vercel, Render and Neon with PostGIS, final CI, and a demo script with screenshots.
+**Demo data.** `npm run db:seed` anchors all seeded dates on the next UTC midnight at seed time (`nextUtcMidnight`, in `packages/shared`). The demo request payloads use the same function at demo time, and the transport demo's pickup window spans 32 hours from noon UTC on the anchor day, so it still finds the seeded day-1 Dallas to Houston legs if one UTC midnight has passed since seeding. After about a day, re-seed. Demo-day workflow: `docker compose up -d` → `npm run db:migrate` → `npm run db:seed` → `npm run dev` → use the landing page's example links.
+
+**Phase 6, ship.** Deployment to Vercel, Render and Neon with PostGIS, final CI, and a demo script. (The README, architecture diagram, matching write-up and honest security note moved into Phase 5.)
 
 ---
 
@@ -300,5 +305,5 @@ Each phase ends working, verified and committed.
 
 - **Unit (Vitest):** an on-route leg outranks a 90-mile detour; a trailer mismatch, insufficient spare capacity, a missed `arriveBy` or an over-limit detour is excluded; empty miles recovered appears only for EMPTY legs; utilisation before and after is correct; warehouse `minStorageDays` and `minQuantity` are enforced; weights are read from config.
 - **Integration (Supertest + PostGIS test DB + MockGeocoder):** create a leg and a request, then confirm `/matches` returns the expected ordering and metrics.
-- **Manual:** `docker compose up -d && npm run db:migrate && npm run db:seed && npm run dev`. Request a Dallas → Houston shipment and confirm the seeded legs with near-zero detour rank first, with sensible "est." metrics and reasons.
+- **Manual:** `docker compose up -d && npm run db:migrate && npm run db:seed && npm run dev` (re-run `npm run db:seed` on demo day; see §9 "Demo data"). Request a Dallas → Houston shipment and confirm the seeded legs with near-zero detour rank first, with sensible "est." metrics and reasons.
 - `npm run lint`, `npm run typecheck`, `npm run build` and CI all pass.

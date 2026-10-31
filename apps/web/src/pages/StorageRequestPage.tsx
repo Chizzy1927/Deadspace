@@ -5,8 +5,10 @@ import { useState } from 'react';
 import { Controller, type FieldErrors, useForm, useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router';
 import { createStorageRequest } from '../api/storage';
+import { ExampleFill } from '../components/ExampleFill';
 import { Field } from '../components/Field';
 import { LocationInput } from '../components/LocationInput';
+import { storageExampleValues } from '../forms/demo-prefill';
 import { fieldAria, firstInvalidField, inputClass } from '../forms/field-aria';
 import { submitErrorMessage } from '../forms/server-errors';
 import {
@@ -14,6 +16,7 @@ import {
   StorageRequestFormSchema,
   type StorageRequestFormValues,
 } from '../forms/storage-request-form';
+import { useExamplePrefill, useExampleRequested } from '../forms/use-example-prefill';
 import { formatDays } from '../format';
 
 /** Every form field, in on-screen order (the order errors are focused in). */
@@ -42,18 +45,22 @@ const asDay = (isoDate: string) => new Date(`${isoDate}T00:00:00Z`);
 export function StorageRequestPage() {
   const navigate = useNavigate();
   const [formError, setFormError] = useState<string | null>(null);
+  const exampleRequested = useExampleRequested();
   const {
     register,
     control,
     handleSubmit,
     setError,
     setFocus,
+    reset,
     formState: { errors },
   } = useForm<StorageRequestFormValues, unknown, CreateStorageRequestInput>({
     resolver: zodResolver(StorageRequestFormSchema),
-    defaultValues: STORAGE_REQUEST_FORM_DEFAULTS,
+    defaultValues: exampleRequested ? storageExampleValues(new Date()) : STORAGE_REQUEST_FORM_DEFAULTS,
     shouldFocusError: false, // see onInvalid below
   });
+
+  const { fill, fillCount } = useExamplePrefill(reset, storageExampleValues, exampleRequested);
 
   const [maxDistanceMiles, startDate, endDate] = useWatch({
     control,
@@ -85,6 +92,7 @@ export function StorageRequestPage() {
           Tell us how many pallet positions you need, where and for how long. We match it against idle warehouse space
           operators have offered.
         </p>
+        <ExampleFill onFill={fill} filled={fillCount > 0} />
       </div>
 
       <form
@@ -98,7 +106,12 @@ export function StorageRequestPage() {
             control={control}
             name="location"
             render={({ field, fieldState }) => (
-              <LocationInput label="Where do you need storage?" {...field} error={fieldState.error?.message} />
+              <LocationInput
+                key={`location-${fillCount}`}
+                label="Where do you need storage?"
+                {...field}
+                error={fieldState.error?.message}
+              />
             )}
           />
           <Field

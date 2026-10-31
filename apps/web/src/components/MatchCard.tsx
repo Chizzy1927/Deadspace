@@ -4,8 +4,21 @@ import { Estimate } from './Estimate';
 import { Highlights, Metric } from './MatchParts';
 import { ScoreBreakdown } from './ScoreBreakdown';
 
-export function MatchCard({ match, rank }: { match: TransportMatch; rank: number }) {
+export function MatchCard({
+  match,
+  rank,
+  headingLevel = 2,
+  showContact = true,
+}: {
+  match: TransportMatch;
+  rank: number;
+  /** Level of the company-name heading, so the card nests correctly under the page's headings. */
+  headingLevel?: 2 | 3;
+  /** False for the landing page's static example, whose contact is fictional and must not be linkable. */
+  showContact?: boolean;
+}) {
   const { leg, metrics, score, highlights, reasons } = match;
+  const Heading = headingLevel === 3 ? 'h3' : 'h2';
   const limiting = metrics.limitingCapacity === 'WEIGHT' ? metrics.weightUtilisation : metrics.palletUtilisation;
 
   return (
@@ -16,7 +29,7 @@ export function MatchCard({ match, rank }: { match: TransportMatch; rank: number
       <header className="flex items-start justify-between gap-4">
         <div>
           <p className="text-sm text-slate-500">#{rank}</p>
-          <h2 className="text-lg font-semibold">{leg.companyName}</h2>
+          <Heading className="text-lg font-semibold">{leg.companyName}</Heading>
           <p className="text-slate-700">
             {leg.origin.label} → {leg.destination.label}
           </p>
@@ -72,11 +85,13 @@ export function MatchCard({ match, rank }: { match: TransportMatch; rank: number
         ))}
       </ul>
 
-      <p className="mt-4 text-sm">
-        <a className="text-blue-700 hover:underline" href={`mailto:${leg.contactEmail}`}>
-          Contact {leg.contactName}
-        </a>
-      </p>
+      {showContact && (
+        <p className="mt-4 text-sm">
+          <a className="text-blue-700 hover:underline" href={`mailto:${leg.contactEmail}`}>
+            Contact {leg.contactName}
+          </a>
+        </p>
+      )}
     </article>
   );
 }
