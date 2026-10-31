@@ -35,6 +35,10 @@ export function createStorageRequest(input: CreateStorageRequestInput) {
   return apiFetch('/api/storage-requests', StorageRequestSchema, { method: 'POST', body: JSON.stringify(payload) });
 }
 
+export function fetchStorageRequest(id: string, signal?: AbortSignal) {
+  return apiFetch(`/api/storage-requests/${encodeURIComponent(id)}`, StorageRequestSchema, { signal: signal ?? null });
+}
+
 export function fetchStorageMatches(requestId: string, signal?: AbortSignal) {
   return apiFetch(`/api/storage-requests/${encodeURIComponent(requestId)}/matches`, StorageMatchesResponseSchema, {
     signal: signal ?? null,

@@ -2,7 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import { ApiError } from '../api/client';
 import { fetchStorageMatches } from '../api/storage';
+import { EditSearchLink } from '../components/EditSearch';
 import { Est, EstimateNote, STORAGE_EST_TOOLTIP } from '../components/Estimate';
+import { storageEditPath } from '../forms/request-prefill';
 import { StorageMatchCard } from '../components/StorageMatchCard';
 import { formatDateRange, formatDays, formatPallets, formatUsd } from '../format';
 import { daysBetween } from '@deadspace/shared';
@@ -50,6 +52,7 @@ export function StorageMatchesPage() {
   return (
     <section className="space-y-6">
       <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <EditSearchLink to={storageEditPath(request.id)} />
         <h1 className="text-xl font-semibold">Storage near {request.location.label}</h1>
         <p className="text-sm text-slate-600">
           {formatPallets(request.pallets)} · {formatDateRange(request.startDate, request.endDate)} (
@@ -67,6 +70,7 @@ export function StorageMatchesPage() {
             pallet positions, accepts a stay and block size like yours, and declares any features you require. Try a
             wider radius or different dates.
           </p>
+          <EditSearchLink to={storageEditPath(request.id)} prominent />
         </div>
       ) : (
         <>

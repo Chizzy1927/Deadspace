@@ -1,16 +1,24 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { type CreateTransportRequestInput, TRANSPORT_LIMITS, TrailerType } from '@deadspace/shared';
+import {
+  type CreateTransportRequestInput,
+  TRANSPORT_LIMITS,
+  TrailerType,
+  type TransportRequest,
+} from '@deadspace/shared';
 import { useMutation } from '@tanstack/react-query';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Controller, type FieldErrors, useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router';
-import { createTransportRequest } from '../api/transport';
+import { createTransportRequest, fetchTransportRequest } from '../api/transport';
+import { EditFromNotice } from '../components/EditSearch';
 import { ExampleFill } from '../components/ExampleFill';
 import { Field } from '../components/Field';
 import { transportExampleValues } from '../forms/demo-prefill';
 import { fieldAria, firstInvalidField, inputClass } from '../forms/field-aria';
 import { LocationInput } from '../components/LocationInput';
+import { transportRequestToFormValues } from '../forms/request-prefill';
 import { submitErrorMessage } from '../forms/server-errors';
+import { useEditFromId, useEditFromRequest } from '../forms/use-edit-from';
 import { useExamplePrefill, useExampleRequested } from '../forms/use-example-prefill';
 import { TransportRequestFormSchema, type TransportRequestFormValues } from '../forms/transport-request-form';
 import { TRAILER_LABELS } from '../format';
@@ -33,9 +41,38 @@ const FIELDS = [
 ] as const satisfies readonly (keyof TransportRequestFormValues)[];
 
 export function TransportRequestPage() {
+  const editFrom = useEditFromId();
+  const edit = useEditFromRequest(editFrom, 'transport-request', fetchTransportRequest);
+  if (edit.state === 'loading') {
+    return (
+      <p role="status" className="text-slate-600">
+        Loading your previous search…
+      </p>
+    );
+  }
+  // Keyed so a different editFrom id remounts the form with its own default values.
+  return (
+    <TransportRequestForm
+      key={editFrom ?? 'new'}
+      previous={edit.data}
+      notice={<EditFromNotice state={edit.state} message={edit.error?.message} />}
+    />
+  );
+}
+
+interface TransportRequestFormProps {
+  /** The saved request named by `?editFrom=`; its values become the form's defaults. */
+  previous: TransportRequest | undefined;
+  notice: ReactNode;
+}
+
+function TransportRequestForm({ previous, notice }: TransportRequestFormProps) {
   const navigate = useNavigate();
   const [formError, setFormError] = useState<string | null>(null);
-  const exampleRequested = useExampleRequested();
+  const exampleParam = useExampleRequested();
+  const editFrom = useEditFromId();
+  // A previous search (or an attempt to load one) takes precedence over the landing page's example link.
+  const exampleRequested = exampleParam && editFrom === null;
   const {
     register,
     control,
@@ -46,16 +83,18 @@ export function TransportRequestPage() {
     formState: { errors },
   } = useForm<TransportRequestFormValues, unknown, CreateTransportRequestInput>({
     resolver: zodResolver(TransportRequestFormSchema),
-    defaultValues: exampleRequested
-      ? transportExampleValues(new Date())
-      : {
-          pickup: null,
-          dropoff: null,
-          deliverBy: '',
-          trailerType: 'DRY_VAN',
-          maxBudget: Number.NaN,
-          notes: '',
-        },
+    defaultValues: previous
+      ? transportRequestToFormValues(previous)
+      : exampleRequested
+        ? transportExampleValues(new Date())
+        : {
+            pickup: null,
+            dropoff: null,
+            deliverBy: '',
+            trailerType: 'DRY_VAN',
+            maxBudget: Number.NaN,
+            notes: '',
+          },
     shouldFocusError: false, // see onInvalid below
   });
   const { fill, fillCount } = useExamplePrefill(reset, transportExampleValues, exampleRequested);
@@ -83,6 +122,7 @@ export function TransportRequestPage() {
           Tell us what you need moved. We match it against trucks already making a similar trip with spare room.
         </p>
         <ExampleFill onFill={fill} filled={fillCount > 0} />
+        <div className="mt-2">{notice}</div>
       </div>
 
       <form

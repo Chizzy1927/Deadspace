@@ -2,7 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import { ApiError } from '../api/client';
 import { fetchTransportMatches } from '../api/transport';
+import { EditSearchLink } from '../components/EditSearch';
 import { Est, EstimateNote } from '../components/Estimate';
+import { transportEditPath } from '../forms/request-prefill';
 import { MatchCard } from '../components/MatchCard';
 import { formatDateTime, formatUsd, formatWindow, TRAILER_LABELS } from '../format';
 
@@ -43,6 +45,7 @@ export function TransportMatchesPage() {
   return (
     <section className="space-y-6">
       <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <EditSearchLink to={transportEditPath(request.id)} />
         <h1 className="text-xl font-semibold">
           {request.pickup.label} → {request.dropoff.label}
         </h1>
@@ -62,6 +65,7 @@ export function TransportMatchesPage() {
             A truck only matches if it has the right trailer, enough spare room, can reach your pickup during your
             window, and your shipment keeps it within the carrier&apos;s detour limit. Try a wider pickup window.
           </p>
+          <EditSearchLink to={transportEditPath(request.id)} prominent />
         </div>
       ) : (
         <>
