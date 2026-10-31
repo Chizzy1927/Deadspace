@@ -22,7 +22,7 @@ const router = createBrowserRouter([
     path: '/',
     element: <App />,
     children: [
-      { index: true, element: <LandingPage />, handle: { title: 'Stranded truck and warehouse capacity' } },
+      { index: true, element: <LandingPage />, handle: { title: 'Spare truck space and idle warehouse space' } },
       {
         element: <ContainedLayout />,
         children: [

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, NavLink } from 'react-router';
 
 const MENU_ID = 'site-menu';
@@ -13,6 +13,7 @@ const groupLabelClass = 'text-xs font-semibold tracking-wide text-slate-600 uppe
 /** Skip link, wordmark and the two-sided navigation (need capacity / have capacity). */
 export function SiteHeader() {
   const [open, setOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
   const close = () => setOpen(false);
 
   return (
@@ -26,7 +27,10 @@ export function SiteHeader() {
       <header
         className="border-b border-slate-200 bg-white"
         onKeyDown={(e) => {
-          if (e.key === 'Escape') close();
+          if (e.key !== 'Escape' || !open) return;
+          close();
+          // The focused link is about to be hidden; keep keyboard focus somewhere visible.
+          toggleRef.current?.focus();
         }}
       >
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-3">
@@ -39,8 +43,9 @@ export function SiteHeader() {
             DeadSpace
           </Link>
           <button
+            ref={toggleRef}
             type="button"
-            className="rounded border border-slate-300 px-3 py-1 text-sm md:hidden"
+            className="rounded border border-slate-300 px-3 py-1 text-sm lg:hidden"
             aria-expanded={open}
             aria-controls={MENU_ID}
             onClick={() => setOpen((v) => !v)}
@@ -50,7 +55,7 @@ export function SiteHeader() {
           <nav
             id={MENU_ID}
             aria-label="Main"
-            className={`${open ? 'flex' : 'hidden'} w-full flex-col gap-4 md:flex md:w-auto md:flex-row md:gap-8`}
+            className={`${open ? 'flex' : 'hidden'} w-full flex-col gap-4 lg:flex lg:w-auto lg:flex-row lg:gap-8`}
           >
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className={groupLabelClass}>I need capacity</span>
