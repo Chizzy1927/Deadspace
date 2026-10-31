@@ -1,3 +1,5 @@
+import { Link } from 'react-router';
+
 const TRAILER_PALLETS = 26;
 const LOADED_PALLETS = 14;
 
@@ -29,6 +31,13 @@ export function Hero() {
               I have capacity
             </a>
           </div>
+          <p className="mt-4 text-sm text-slate-700">
+            Just looking?{' '}
+            <Link to="/request/transport?example=1" className="font-medium text-blue-800 underline">
+              See a demo request
+            </Link>{' '}
+            (a pre-filled form you review before submitting).
+          </p>
         </div>
         <CapacityPreview />
       </div>

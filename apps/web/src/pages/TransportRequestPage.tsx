@@ -2,20 +2,21 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { type CreateTransportRequestInput, TRANSPORT_LIMITS, TrailerType } from '@deadspace/shared';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, type FieldErrors, useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router';
 import { createTransportRequest } from '../api/transport';
+import { ExampleFill } from '../components/ExampleFill';
 import { Field } from '../components/Field';
-import { fieldAria, inputClass } from '../forms/field-aria';
+import { transportExampleValues } from '../forms/demo-prefill';
+import { fieldAria, firstInvalidField, inputClass } from '../forms/field-aria';
 import { LocationInput } from '../components/LocationInput';
 import { submitErrorMessage } from '../forms/server-errors';
+import { useExamplePrefill, useExampleRequested } from '../forms/use-example-prefill';
 import { TransportRequestFormSchema, type TransportRequestFormValues } from '../forms/transport-request-form';
 import { TRAILER_LABELS } from '../format';
 
+/** Every form field, in on-screen order (the order errors are focused in). */
 const FIELDS = [
-  'companyName',
-  'contactName',
-  'contactEmail',
   'pickup',
   'dropoff',
   'pickupEarliest',
@@ -25,29 +26,39 @@ const FIELDS = [
   'pallets',
   'weightLbs',
   'maxBudget',
+  'companyName',
+  'contactName',
+  'contactEmail',
   'notes',
 ] as const satisfies readonly (keyof TransportRequestFormValues)[];
 
 export function TransportRequestPage() {
   const navigate = useNavigate();
   const [formError, setFormError] = useState<string | null>(null);
+  const exampleRequested = useExampleRequested();
   const {
     register,
     control,
     handleSubmit,
     setError,
+    setFocus,
+    reset,
     formState: { errors },
   } = useForm<TransportRequestFormValues, unknown, CreateTransportRequestInput>({
     resolver: zodResolver(TransportRequestFormSchema),
-    defaultValues: {
-      pickup: null,
-      dropoff: null,
-      deliverBy: '',
-      trailerType: 'DRY_VAN',
-      maxBudget: Number.NaN,
-      notes: '',
-    },
+    defaultValues: exampleRequested
+      ? transportExampleValues(new Date())
+      : {
+          pickup: null,
+          dropoff: null,
+          deliverBy: '',
+          trailerType: 'DRY_VAN',
+          maxBudget: Number.NaN,
+          notes: '',
+        },
+    shouldFocusError: false, // see onInvalid below
   });
+  const { fill, fillCount } = useExamplePrefill(reset, transportExampleValues, exampleRequested);
 
   const submit = useMutation({
     mutationFn: createTransportRequest,
@@ -55,6 +66,12 @@ export function TransportRequestPage() {
     onSuccess: (request) => navigate(`/requests/transport/${request.id}/matches`),
     onError: (error) => setFormError(submitErrorMessage(error, FIELDS, setError)),
   });
+
+  // RHF's built-in focus visits Controller fields (the locations) last; focus in on-screen order instead.
+  const onInvalid = (invalid: FieldErrors<TransportRequestFormValues>) => {
+    const first = firstInvalidField(FIELDS, invalid);
+    if (first) setFocus(first);
+  };
 
   const aria = (name: (typeof FIELDS)[number], id: string) => fieldAria(id, { error: errors[name]?.message });
 
@@ -65,23 +82,33 @@ export function TransportRequestPage() {
         <p className="text-slate-600">
           Tell us what you need moved. We match it against trucks already making a similar trip with spare room.
         </p>
+        <ExampleFill onFill={fill} filled={fillCount > 0} />
       </div>
 
-      <form noValidate onSubmit={(e) => void handleSubmit((input) => submit.mutate(input))(e)} className="space-y-6">
+      <form
+        noValidate
+        onSubmit={(e) => void handleSubmit((input) => submit.mutate(input), onInvalid)(e)}
+        className="space-y-6"
+      >
         <fieldset className="grid gap-4 sm:grid-cols-2">
           <legend className="mb-2 font-semibold">Route</legend>
           <Controller
             control={control}
             name="pickup"
             render={({ field, fieldState }) => (
-              <LocationInput label="Pickup" {...field} error={fieldState.error?.message} />
+              <LocationInput key={`pickup-${fillCount}`} label="Pickup" {...field} error={fieldState.error?.message} />
             )}
           />
           <Controller
             control={control}
             name="dropoff"
             render={({ field, fieldState }) => (
-              <LocationInput label="Dropoff" {...field} error={fieldState.error?.message} />
+              <LocationInput
+                key={`dropoff-${fillCount}`}
+                label="Dropoff"
+                {...field}
+                error={fieldState.error?.message}
+              />
             )}
           />
         </fieldset>

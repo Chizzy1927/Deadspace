@@ -6,6 +6,8 @@ interface Flow {
   title: string;
   body: string;
   fields: string;
+  /** A pre-filled version of the same form, for shipper flows only. */
+  example?: { to: string; label: string };
 }
 
 const SIDES = [
@@ -19,12 +21,14 @@ const SIDES = [
         title: 'Request transport',
         body: "Move pallets on a truck that's already making the trip.",
         fields: 'Pickup and drop-off, pickup window, pallets, weight and trailer type.',
+        example: { to: '/request/transport?example=1', label: 'Try it with an example transport request' },
       },
       {
         to: '/request/storage',
         title: 'Request storage',
         body: 'Find short-term warehouse space near where you need it.',
         fields: 'Location, move-in and move-out dates, and pallet positions.',
+        example: { to: '/request/storage?example=1', label: 'Try it with an example storage request' },
       },
     ],
   },
@@ -94,6 +98,14 @@ function FlowCard({ flow }: { flow: Flow }) {
       <p className="mt-3 text-sm text-slate-600">
         <span className="font-medium text-slate-700">You&apos;ll enter:</span> {flow.fields}
       </p>
+      {flow.example && (
+        // Above the stretched card link so it stays separately clickable.
+        <p className="relative z-10 mt-3 text-sm">
+          <Link to={flow.example.to} className="font-medium text-blue-800 underline">
+            {flow.example.label}
+          </Link>
+        </p>
+      )}
     </div>
   );
 }
