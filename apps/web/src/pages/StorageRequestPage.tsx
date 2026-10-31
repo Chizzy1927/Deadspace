@@ -1,21 +1,30 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { type CreateStorageRequestInput, daysBetween, STORAGE_LIMITS, STORAGE_POLICY } from '@deadspace/shared';
+import {
+  type CreateStorageRequestInput,
+  daysBetween,
+  STORAGE_LIMITS,
+  STORAGE_POLICY,
+  type StorageRequest,
+} from '@deadspace/shared';
 import { useMutation } from '@tanstack/react-query';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { Controller, type FieldErrors, useForm, useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router';
-import { createStorageRequest } from '../api/storage';
+import { createStorageRequest, fetchStorageRequest } from '../api/storage';
+import { EditFromNotice } from '../components/EditSearch';
 import { ExampleFill } from '../components/ExampleFill';
 import { Field } from '../components/Field';
 import { LocationInput } from '../components/LocationInput';
 import { storageExampleValues } from '../forms/demo-prefill';
 import { fieldAria, firstInvalidField, inputClass } from '../forms/field-aria';
+import { storageRequestToFormValues } from '../forms/request-prefill';
 import { submitErrorMessage } from '../forms/server-errors';
 import {
   STORAGE_REQUEST_FORM_DEFAULTS,
   StorageRequestFormSchema,
   type StorageRequestFormValues,
 } from '../forms/storage-request-form';
+import { useEditFromId, useEditFromRequest } from '../forms/use-edit-from';
 import { useExamplePrefill, useExampleRequested } from '../forms/use-example-prefill';
 import { formatDays } from '../format';
 
@@ -43,9 +52,38 @@ const legendClass = 'mb-2 font-semibold';
 const asDay = (isoDate: string) => new Date(`${isoDate}T00:00:00Z`);
 
 export function StorageRequestPage() {
+  const editFrom = useEditFromId();
+  const edit = useEditFromRequest(editFrom, 'storage-request', fetchStorageRequest);
+  if (edit.state === 'loading') {
+    return (
+      <p role="status" className="text-slate-600">
+        Loading your previous search…
+      </p>
+    );
+  }
+  // Keyed so a different editFrom id remounts the form with its own default values.
+  return (
+    <StorageRequestForm
+      key={editFrom ?? 'new'}
+      previous={edit.data}
+      notice={<EditFromNotice state={edit.state} message={edit.error?.message} />}
+    />
+  );
+}
+
+interface StorageRequestFormProps {
+  /** The saved request named by `?editFrom=`; its values become the form's defaults. */
+  previous: StorageRequest | undefined;
+  notice: ReactNode;
+}
+
+function StorageRequestForm({ previous, notice }: StorageRequestFormProps) {
   const navigate = useNavigate();
   const [formError, setFormError] = useState<string | null>(null);
-  const exampleRequested = useExampleRequested();
+  const exampleParam = useExampleRequested();
+  const editFrom = useEditFromId();
+  // A previous search (or an attempt to load one) takes precedence over the landing page's example link.
+  const exampleRequested = exampleParam && editFrom === null;
   const {
     register,
     control,
@@ -56,7 +94,11 @@ export function StorageRequestPage() {
     formState: { errors },
   } = useForm<StorageRequestFormValues, unknown, CreateStorageRequestInput>({
     resolver: zodResolver(StorageRequestFormSchema),
-    defaultValues: exampleRequested ? storageExampleValues(new Date()) : STORAGE_REQUEST_FORM_DEFAULTS,
+    defaultValues: previous
+      ? storageRequestToFormValues(previous)
+      : exampleRequested
+        ? storageExampleValues(new Date())
+        : STORAGE_REQUEST_FORM_DEFAULTS,
     shouldFocusError: false, // see onInvalid below
   });
 
@@ -93,6 +135,7 @@ export function StorageRequestPage() {
           operators have offered.
         </p>
         <ExampleFill onFill={fill} filled={fillCount > 0} />
+        <div className="mt-2">{notice}</div>
       </div>
 
       <form

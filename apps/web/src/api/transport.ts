@@ -12,6 +12,12 @@ export function createTransportRequest(input: CreateTransportRequestInput) {
   return apiFetch('/api/transport-requests', TransportRequestSchema, { method: 'POST', body: JSON.stringify(input) });
 }
 
+export function fetchTransportRequest(id: string, signal?: AbortSignal) {
+  return apiFetch(`/api/transport-requests/${encodeURIComponent(id)}`, TransportRequestSchema, {
+    signal: signal ?? null,
+  });
+}
+
 export function createTruckLeg(input: CreateTruckLegInput) {
   return apiFetch('/api/truck-legs', TruckLegSchema, { method: 'POST', body: JSON.stringify(input) });
 }
