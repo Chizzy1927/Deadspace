@@ -9,6 +9,7 @@ import {
   type CreateTruckLegInput,
   createTruckLegInputSchema,
   type LoadState,
+  nextUtcMidnight,
   type TrailerType,
   type TruckPricingBasis,
 } from '@deadspace/shared';
@@ -475,12 +476,8 @@ export interface SeedTruckLeg {
   input: CreateTruckLegInput;
 }
 
-/** Default anchor: the next UTC midnight after `now`. */
-export function defaultSeedAnchor(now: Date): Date {
-  const d = new Date(now);
-  d.setUTCHours(24, 0, 0, 0);
-  return d;
-}
+/** Default anchor: the next UTC midnight after `now` (shared, so the web demo requests use the same rule). */
+export const defaultSeedAnchor = nextUtcMidnight;
 
 /** Resolves and validates every seed leg; throws if any location or rule fails. */
 export async function buildSeedTruckLegs(anchor: Date, geocoder: Geocoder): Promise<SeedTruckLeg[]> {

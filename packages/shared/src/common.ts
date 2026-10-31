@@ -99,3 +99,8 @@ export function straightLineMiles(a: Pick<Location, 'lat' | 'lng'>, b: Pick<Loca
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
   return 2 * EARTH_RADIUS_MILES * Math.asin(Math.min(1, Math.sqrt(h)));
 }
+
+/** The next UTC midnight strictly after `now`: the anchor `npm run db:seed` dates its data from. */
+export function nextUtcMidnight(now: Date): Date {
+  return addDays(utcStartOfDay(now), 1);
+}

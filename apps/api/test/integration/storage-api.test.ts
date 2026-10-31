@@ -4,6 +4,7 @@
 import {
   addDays,
   ApiErrorResponseSchema,
+  buildDemoStorageRequest,
   StorageMatchesResponseSchema,
   StorageRequestSchema,
   toCalendarDate,
@@ -271,5 +272,23 @@ describe('storage matches API (real PostGIS)', () => {
       (await request(app).get(`/api/storage-requests/${requestId}/matches`)).body,
     );
     expect(matches.map((m) => m.space.id)).toEqual([space.id]);
+  });
+});
+
+describe('demo storage request (real PostGIS + deterministic seed)', () => {
+  it.each([
+    ['the day it was seeded', 0],
+    ['a day after it was seeded', 24],
+  ])('finds seeded Dallas-area warehouses %s', async (_label, hoursLater) => {
+    await seedReferenceSet();
+
+    const demoNow = new Date(Date.now() + hoursLater * 3_600_000);
+    const created = await request(app).post('/api/storage-requests').send(buildDemoStorageRequest(demoNow));
+    expect(created.status).toBe(201);
+    const res = await request(app).get(`/api/storage-requests/${StorageRequestSchema.parse(created.body).id}/matches`);
+    const { matches } = StorageMatchesResponseSchema.parse(res.body);
+
+    expect(matches.length).toBeGreaterThanOrEqual(2);
+    expect(matches[0]?.space.id).toBe(id('01'));
   });
 });
