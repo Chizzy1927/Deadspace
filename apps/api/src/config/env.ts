@@ -20,6 +20,8 @@ const EnvSchema = z
     GEOCODER: z.enum(['geoapify', 'mock']).default('mock'),
     // Empty in .env.example; treat blank as unset.
     GEOAPIFY_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
+    // TEMPORARY: enables the token-gated proxy diagnostic. Unset in normal operation.
+    DIAG_PROXY_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(32).optional()),
   })
   .refine((env) => env.GEOCODER !== 'geoapify' || env.GEOAPIFY_API_KEY, {
     path: ['GEOAPIFY_API_KEY'],
