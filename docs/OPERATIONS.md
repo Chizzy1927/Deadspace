@@ -11,6 +11,11 @@ seeds on startup (`npm run start -w apps/api` only runs `node dist/server.js`).
 
 `db:migrate` (`prisma migrate dev`) is for local development only and must never be pointed at production.
 
+`npm run db:status -w apps/api` is a fourth, **read-only** command: it prints seeded and user-created row counts and how much
+seeded transport inventory is left (`-- --json` for machine output, `-- --expect-no-public-supply` to exit 1 if any
+user-created truck leg or warehouse space exists). Deploying and smoke-testing the public demo is covered in
+[DEPLOYMENT.md](DEPLOYMENT.md).
+
 ## Connection strings
 
 - `DATABASE_URL`: used by the running API and by the seed. In production this is the host's **pooled** URL.
@@ -81,7 +86,8 @@ about monthly keeps a comfortable margin. Reseeding the same day is harmless and
 
 #### Recognising that the horizon is running out
 
-Check the newest seeded departure day L (read-only):
+Run `npm run db:status -w apps/api` (read-only; it prints the date and the days of full demo left), or check the newest
+seeded departure day L directly:
 
 ```sql
 SELECT max("departureEarliest")::date AS latest_seeded_departure

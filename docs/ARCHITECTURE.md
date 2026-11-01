@@ -10,16 +10,16 @@ Trucks often run empty or partly loaded on legs they are already planning to dri
 
 ## 1. Tech stack
 
-| Layer       | Choice                                                                                                                 | Notes                                                                                                     |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| Monorepo    | npm workspaces                                                                                                         | No extra tooling                                                                                          |
-| Frontend    | React 19 + Vite, React Router, Tailwind, React Hook Form + Zod, TanStack Query                                         | SPA                                                                                                       |
-| Backend     | Node + Express 5 (TypeScript; dev runs `node --watch --import tsx`)                                                    | Thin routes over services. Not `tsx watch`: on Windows it hangs when `concurrently` gives it a stdin pipe |
-| DB          | **PostgreSQL 17 + PostGIS 3** (`postgis/postgis` Docker image locally; Neon, which supports PostGIS, for deploy)       | Geospatial matching is a core domain capability                                                           |
-| ORM         | Prisma, with raw SQL (`$queryRaw`) only in the geo repository layer                                                    | See §4                                                                                                    |
-| Geocoding   | **Geoapify** behind a vendor-neutral `Geocoder` interface; `MockGeocoder` for tests and seeds                          | See §3                                                                                                    |
-| Testing     | Vitest (unit) + Supertest (API integration against a PostGIS test DB)                                                  |                                                                                                           |
-| CI / deploy | GitHub Actions (lint, typecheck, test with a PostGIS service container); Vercel (web), Render/Railway (API), Neon (DB) |                                                                                                           |
+| Layer       | Choice                                                                                                                                                                     | Notes                                                                                                     |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Monorepo    | npm workspaces                                                                                                                                                             | No extra tooling                                                                                          |
+| Frontend    | React 19 + Vite, React Router, Tailwind, React Hook Form + Zod, TanStack Query                                                                                             | SPA                                                                                                       |
+| Backend     | Node + Express 5 (TypeScript; dev runs `node --watch --import tsx`)                                                                                                        | Thin routes over services. Not `tsx watch`: on Windows it hangs when `concurrently` gives it a stdin pipe |
+| DB          | **PostgreSQL 17 + PostGIS 3** (`postgis/postgis` Docker image locally; Neon, which supports PostGIS, for deploy)                                                           | Geospatial matching is a core domain capability                                                           |
+| ORM         | Prisma, with raw SQL (`$queryRaw`) only in the geo repository layer                                                                                                        | See §4                                                                                                    |
+| Geocoding   | **Geoapify** behind a vendor-neutral `Geocoder` interface; `MockGeocoder` for tests and seeds                                                                              | See §3                                                                                                    |
+| Testing     | Vitest (unit) + Supertest (API integration against a PostGIS test DB)                                                                                                      |                                                                                                           |
+| CI / deploy | GitHub Actions (lint, typecheck, test with a PostGIS service container); one Render web service serving the API and the built web app, Neon (DB). See `docs/DEPLOYMENT.md` |                                                                                                           |
 
 ---
 
@@ -297,7 +297,7 @@ Each phase ends working, verified and committed.
 
 **Demo data.** `npm run db:seed` anchors all seeded dates on the next UTC midnight at seed time (`nextUtcMidnight`, in `packages/shared`). The demo request payloads use the same function at demo time, and the transport demo's pickup window spans 32 hours from noon UTC on the anchor day, so it still finds the seeded day-1 Dallas to Houston legs if one UTC midnight has passed since seeding. After about a day, re-seed. Demo-day workflow: `docker compose up -d` → `npm run db:migrate` → `npm run db:seed` → `npm run dev` → use the landing page's example links.
 
-**Phase 6, ship.** Deployment to Vercel, Render and Neon with PostGIS, final CI, and a demo script. (The README, architecture diagram, matching write-up and honest security note moved into Phase 5.)
+**Phase 6, ship.** Deployment as a single Render web service (Express serves `/api` and the built web app, same origin) over Neon with PostGIS, public-demo safeguards and disclosure, durable seed data, and a public smoke test (`docs/DEPLOYMENT.md`). (The README, architecture diagram, matching write-up and honest security note moved into Phase 5.)
 
 ---
 

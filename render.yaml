@@ -1,0 +1,41 @@
+# Render Blueprint: one always-on Node web service that serves both the API (/api) and the built web
+# app, in front of a Neon Postgres database that is created separately (see docs/DEPLOYMENT.md).
+#
+# Rules this file encodes (checked by apps/api/test/unit/render-blueprint.test.ts):
+# - VITE_API_URL is deliberately absent: with it unset, the production web build calls same-origin /api.
+# - DATABASE_URL (Neon pooled) and DIRECT_DATABASE_URL (Neon direct) are secrets, typed into Render's
+#   dashboard when the Blueprint is first created. They are never written here.
+# - Migrations run as the pre-deploy command; seeding is never automatic (docs/OPERATIONS.md).
+# - The health check path is the database-free liveness route, so Render's frequent polling does not keep
+#   a scale-to-zero database awake. The deep check is /api/health.
+services:
+  - type: web
+    name: deadspace
+    runtime: node
+    plan: 0.5c-512mb
+    region: ohio
+    branch: main
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci --include=dev && npm run build
+    preDeployCommand: npm run db:deploy -w apps/api
+    startCommand: npm run start -w apps/api
+    healthCheckPath: /api/livez
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
+      - key: NODE_ENV
+        value: production
+      - key: TRUST_PROXY
+        value: '1'
+      - key: DEMO_LISTING_CREATION
+        value: 'false'
+      - key: WRITE_RATE_LIMIT_PER_HOUR
+        value: '30'
+      - key: MAX_ROWS_PER_TABLE
+        value: '5000'
+      - key: GEOCODER
+        value: mock
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_DATABASE_URL
+        sync: false
