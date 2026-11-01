@@ -109,6 +109,8 @@ npm run dev                 # API on :3001, web on :5173
 
 Open <http://localhost:5173>.
 
+Production migrate/seed procedures (`npm run db:deploy`, `DIRECT_DATABASE_URL`, manual recovery) are in [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
 With `GEOCODER=mock`, location search only knows a fixed list of US cities (mainly in and around Texas). To use Geoapify search, set `GEOCODER=geoapify` and `GEOAPIFY_API_KEY` in `.env`. The seed never calls Geoapify.
 
 Other scripts: `npm run lint`, `npm run typecheck`, `npm run build`, `npm run db:drift`. The image is published for amd64 only, so ARM machines run it under emulation.
