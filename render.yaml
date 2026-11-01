@@ -26,8 +26,9 @@ services:
         value: '24'
       - key: NODE_ENV
         value: production
+      # Two proxies (Cloudflare, then Render's load balancer) sit in front of the app; see docs/DEPLOYMENT.md.
       - key: TRUST_PROXY
-        value: '1'
+        value: '2'
       - key: DEMO_LISTING_CREATION
         value: 'false'
       - key: WRITE_RATE_LIMIT_PER_HOUR
