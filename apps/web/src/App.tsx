@@ -1,4 +1,5 @@
 import { Outlet, ScrollRestoration, useMatches } from 'react-router';
+import { DemoBanner } from './components/DemoBanner';
 import { SiteFooter } from './components/SiteFooter';
 import { SiteHeader } from './components/SiteHeader';
 import { routeTitle } from './route-title';
@@ -9,6 +10,7 @@ export function App() {
     <div className="flex min-h-screen flex-col bg-slate-50 text-slate-900">
       <title>{routeTitle(useMatches())}</title>
       <SiteHeader />
+      <DemoBanner />
       <main id="main" tabIndex={-1} className="flex-1 focus:outline-none">
         <Outlet />
       </main>

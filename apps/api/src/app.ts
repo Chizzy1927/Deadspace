@@ -5,6 +5,7 @@ import type { Geocoder } from './geocoding/index.js';
 import type { DemoPolicy } from './middleware/demo-policy.js';
 import { errorHandler, notFound } from './middleware/errors.js';
 import { noIndex, webAppRouter } from './middleware/web-app.js';
+import { demoConfigRouter } from './routes/demo-config.js';
 import { geocodeRouter, type GeocodeRateLimit } from './routes/geocode.js';
 import { healthRouter } from './routes/health.js';
 import { storageRouter } from './routes/storage.js';
@@ -44,6 +45,7 @@ export function createApp({
   app.use(express.json({ limit: '100kb' }));
 
   app.use('/api', healthRouter(checkDatabase));
+  app.use('/api', demoConfigRouter(demoPolicy));
   app.use('/api', geocodeRouter(geocoder, geocodeRateLimit));
   app.use('/api', transportRouter(prisma, demoPolicy));
   app.use('/api', storageRouter(prisma, demoPolicy));

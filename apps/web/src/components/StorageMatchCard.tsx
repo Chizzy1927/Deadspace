@@ -10,6 +10,7 @@ import {
 } from '../format';
 import { StorageEstimate } from './Estimate';
 import { Highlights, Metric } from './MatchParts';
+import { ContactLine, SampleBadge } from './SampleBadge';
 import { StorageScoreBreakdown } from './StorageScoreBreakdown';
 
 /** The features the shipper required, which every returned match declares (the API only returns feasible matches). */
@@ -44,7 +45,10 @@ export function StorageMatchCard({
       <header className="flex items-start justify-between gap-4">
         <div>
           <p className="text-sm text-slate-500">#{rank}</p>
-          <h2 className="text-lg font-semibold">{space.companyName}</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold">{space.companyName}</h2>
+            <SampleBadge id={space.id} />
+          </div>
           <p className="text-slate-700">{space.location.label}</p>
           <p className="text-sm text-slate-500">
             Available {formatDateRange(space.availableFrom, space.availableTo)} ·{' '}
@@ -118,11 +122,7 @@ export function StorageMatchCard({
         ))}
       </ul>
 
-      <p className="mt-4 text-sm">
-        <a className="text-blue-700 hover:underline" href={`mailto:${space.contactEmail}`}>
-          Contact {space.contactName}
-        </a>
-      </p>
+      <ContactLine id={space.id} name={space.contactName} email={space.contactEmail} />
     </article>
   );
 }

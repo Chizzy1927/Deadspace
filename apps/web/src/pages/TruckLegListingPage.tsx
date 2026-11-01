@@ -12,7 +12,9 @@ import { useState } from 'react';
 import { Controller, type FieldErrors, useForm, useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router';
 import { createTruckLeg } from '../api/transport';
+import { useListingCreationEnabled } from '../api/demo-config';
 import { Field } from '../components/Field';
+import { NotSavedStatus, SupplyDisabledNotice } from '../components/SupplyDisabledNotice';
 import { fieldAria, firstInvalidField, inputClass } from '../forms/field-aria';
 import { LocationInput } from '../components/LocationInput';
 import { submitErrorMessage } from '../forms/server-errors';
@@ -60,6 +62,9 @@ const legendClass = 'mb-2 font-semibold';
 export function TruckLegListingPage() {
   const navigate = useNavigate();
   const [formError, setFormError] = useState<string | null>(null);
+  const [checked, setChecked] = useState(false);
+  // While saving is turned off (the public demo) the form still validates, but nothing is sent.
+  const savingDisabled = useListingCreationEnabled() === false;
   const {
     register,
     control,
@@ -114,9 +119,13 @@ export function TruckLegListingPage() {
         </p>
       </div>
 
+      {savingDisabled && <SupplyDisabledNotice kind="truck" />}
+
       <form
         noValidate
-        onSubmit={(e) => void handleSubmit((input) => submit.mutate(input), onInvalid)(e)}
+        onSubmit={(e) =>
+          void handleSubmit((input) => (savingDisabled ? setChecked(true) : submit.mutate(input)), onInvalid)(e)
+        }
         className="space-y-6"
       >
         <fieldset className="grid gap-4 sm:grid-cols-2">
@@ -334,8 +343,9 @@ export function TruckLegListingPage() {
           disabled={submit.isPending}
           className="rounded bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 disabled:opacity-60"
         >
-          {submit.isPending ? 'Listing…' : 'List this leg'}
+          {submit.isPending ? 'Listing…' : savingDisabled ? 'Check my listing (not saved)' : 'List this leg'}
         </button>
+        <NotSavedStatus show={checked && savingDisabled} />
       </form>
     </section>
   );

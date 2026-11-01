@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import { ApiError } from '../api/client';
 import { fetchStorageMatches } from '../api/storage';
+import { ZeroMatchCoverageNote } from '../components/DemoCoverage';
 import { EditSearchLink } from '../components/EditSearch';
 import { Est, EstimateNote, STORAGE_EST_TOOLTIP } from '../components/Estimate';
 import { storageEditPath } from '../forms/request-prefill';
@@ -70,6 +71,7 @@ export function StorageMatchesPage() {
             pallet positions, accepts a stay and block size like yours, and declares any features you require. Try a
             wider radius or different dates.
           </p>
+          <ZeroMatchCoverageNote kind="storage" />
           <EditSearchLink to={storageEditPath(request.id)} prominent />
         </div>
       ) : (

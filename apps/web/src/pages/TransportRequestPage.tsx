@@ -11,6 +11,7 @@ import { Controller, type FieldErrors, useForm } from 'react-hook-form';
 import { useNavigate } from 'react-router';
 import { createTransportRequest, fetchTransportRequest } from '../api/transport';
 import { EditFromNotice } from '../components/EditSearch';
+import { DemoCoverageHint } from '../components/DemoCoverage';
 import { ExampleFill } from '../components/ExampleFill';
 import { Field } from '../components/Field';
 import { transportExampleValues } from '../forms/demo-prefill';
@@ -121,6 +122,7 @@ function TransportRequestForm({ previous, notice }: TransportRequestFormProps) {
         <p className="text-slate-600">
           Tell us what you need moved. We match it against trucks already making a similar trip with spare room.
         </p>
+        <DemoCoverageHint kind="transport" />
         <ExampleFill onFill={fill} filled={fillCount > 0} />
         <div className="mt-2">{notice}</div>
       </div>

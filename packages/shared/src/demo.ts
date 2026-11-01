@@ -48,3 +48,11 @@ export function buildDemoStorageRequest(now: Date): CreateStorageRequestPayload 
     needsFoodGrade: false,
   };
 }
+
+/**
+ * True for the fictional listings created by `npm run db:seed` (their ids start with `seed-`). The web
+ * app marks these as sample data and never renders their made-up contacts as live `mailto:` links.
+ */
+export function isSampleDataId(id: string): boolean {
+  return id.startsWith('seed-');
+}

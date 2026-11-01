@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router';
 import { ApiError } from '../api/client';
 import { fetchTransportMatches } from '../api/transport';
+import { ZeroMatchCoverageNote } from '../components/DemoCoverage';
 import { EditSearchLink } from '../components/EditSearch';
 import { Est, EstimateNote } from '../components/Estimate';
 import { transportEditPath } from '../forms/request-prefill';
@@ -65,6 +66,7 @@ export function TransportMatchesPage() {
             A truck only matches if it has the right trailer, enough spare room, can reach your pickup during your
             window, and your shipment keeps it within the carrier&apos;s detour limit. Try a wider pickup window.
           </p>
+          <ZeroMatchCoverageNote kind="transport" />
           <EditSearchLink to={transportEditPath(request.id)} prominent />
         </div>
       ) : (

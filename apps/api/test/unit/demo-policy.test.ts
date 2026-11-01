@@ -1,4 +1,4 @@
-import { ApiErrorResponseSchema } from '@deadspace/shared';
+import { ApiErrorResponseSchema, DemoConfigSchema } from '@deadspace/shared';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createApp } from '../../src/app.js';
@@ -126,5 +126,33 @@ describe('demo write guards', () => {
     for (let i = 0; i < 5; i++) {
       expect((await request(app).post('/api/truck-legs').send({})).status).toBe(400);
     }
+  });
+});
+
+describe('GET /api/demo-config', () => {
+  const configFor = async (app: ReturnType<typeof createApp>) => {
+    const res = await request(app).get('/api/demo-config');
+    expect(res.status).toBe(200);
+    return DemoConfigSchema.parse(res.body);
+  };
+
+  it('says listing creation is off when the policy disables it', async () => {
+    expect(await configFor(appWith())).toEqual({ listingCreationEnabled: false });
+  });
+
+  it('says it is on when the policy allows it', async () => {
+    expect(await configFor(appWith({ policy: { listingCreationEnabled: true } }))).toEqual({
+      listingCreationEnabled: true,
+    });
+  });
+
+  it('says it is on when there is no policy (local development)', async () => {
+    const app = createApp({
+      webOrigin: 'http://localhost:5173',
+      checkDatabase: createDatabaseHealthCheck(() => Promise.resolve('3.5')),
+      prisma: stubPrisma(0),
+      geocoder: new MockGeocoder(),
+    });
+    expect(await configFor(app)).toEqual({ listingCreationEnabled: true });
   });
 });

@@ -35,3 +35,10 @@ export const HealthResponseSchema = z.object({
   ]),
 });
 export type HealthResponse = z.infer<typeof HealthResponseSchema>;
+
+/**
+ * GET /api/demo-config: public-demo switches the web app needs at runtime. Supply creation is off in
+ * the deployed portfolio demo (the API refuses it with FEATURE_DISABLED); the forms explain that up front.
+ */
+export const DemoConfigSchema = z.object({ listingCreationEnabled: z.boolean() });
+export type DemoConfig = z.infer<typeof DemoConfigSchema>;
