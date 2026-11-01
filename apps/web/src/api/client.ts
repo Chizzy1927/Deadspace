@@ -6,7 +6,16 @@ import {
 } from '@deadspace/shared';
 import type { z } from 'zod';
 
-export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+/**
+ * An explicit VITE_API_URL always wins. Otherwise dev talks to the local API, and a production
+ * build uses same-origin relative URLs (the API serves this app, so `/api/...` just works).
+ */
+export function resolveApiUrl(configured: string | undefined, isDev: boolean): string {
+  if (configured !== undefined) return configured.replace(/\/+$/, '');
+  return isDev ? 'http://localhost:3001' : '';
+}
+
+export const API_URL = resolveApiUrl(import.meta.env.VITE_API_URL, import.meta.env.DEV);
 
 /** A non-2xx API response, carrying the standard `{ error: { code, message, details? } }` body. */
 export class ApiError extends Error {

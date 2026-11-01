@@ -15,6 +15,8 @@ const EnvSchema = z
       .transform((v) => v === 'true'),
     WRITE_RATE_LIMIT_PER_HOUR: z.coerce.number().int().positive().default(30),
     MAX_ROWS_PER_TABLE: z.coerce.number().int().positive().default(5000),
+    // Built web app to serve. Defaults to the monorepo's apps/web/dist; served only if it exists.
+    WEB_DIST_DIR: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
     GEOCODER: z.enum(['geoapify', 'mock']).default('mock'),
     // Empty in .env.example; treat blank as unset.
     GEOAPIFY_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
