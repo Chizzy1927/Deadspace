@@ -4,12 +4,13 @@ DeadSpace runs as **one Render web service** (Express serving both `/api` and th
 **one Neon Postgres 17 + PostGIS database**. The service is defined in [`render.yaml`](../render.yaml). Database
 operations (migrate, seed, reset) are in [OPERATIONS.md](OPERATIONS.md).
 
-Cost: Render plan `0.5c-512mb` (formerly "Starter") is **$7 a month** (render.com/pricing, checked 2026-11-01), always on,
-billed per second; the Hobby workspace itself is $0. Included with the Hobby workspace: **5 GB of outbound bandwidth a month**
-(overage $0.15 per GB when a payment method is on file; without one Render spins the services down until next month) and 500
-build minutes (overage $5 per 1,000). The built web bundle is roughly 175 KB gzipped, so ordinary demo traffic is far below 5 GB,
-but a crawler or bot flood would be billed: check the Render usage page after sharing the link widely. Neon Free is $0 and needs
-no card.
+Cost: **$0 a month**. This is a portfolio deployment on **Render Free** plus **Neon Free**, neither of which needs a card.
+Render's Free docs (render.com/docs/free, checked 2026-11-01) say a Free web service **spins down after 15 minutes without inbound
+traffic and takes about a minute to start again** (browsers see a loading page meanwhile), gets 750 instance hours a month
+(one always-on service needs about 744), has an ephemeral filesystem, cannot run a pre-deploy command, and keeps only the two most
+recent previous deploys for rollback. With no payment method on file, exhausting build minutes or bandwidth disables builds or
+suspends the Free service instead of billing. If the project becomes production-oriented, upgrade the Render plan (and then a
+pre-deploy migration step becomes possible); nothing else in the design changes.
 
 ## Rules that must not be broken
 
@@ -21,12 +22,12 @@ no card.
 
 ## Environment (Render)
 
-All of these are set by `render.yaml` except the two secrets, which Render asks you for when you create the Blueprint.
+All of these are set by `render.yaml` except `DATABASE_URL`, which Render asks you for when you create the Blueprint.
+Render never receives the direct URL: it does not migrate.
 
 | Variable                    | Value               | Secret | Notes                                                                                         |
 | --------------------------- | ------------------- | ------ | --------------------------------------------------------------------------------------------- |
 | `DATABASE_URL`              | Neon **pooled** URL | yes    | Runtime. Host contains `-pooler`. Missing: the API exits at startup.                          |
-| `DIRECT_DATABASE_URL`       | Neon **direct** URL | yes    | Pre-deploy migrations only (the Prisma CLI prefers it). Missing: falls back to pooled.        |
 | `NODE_VERSION`              | `24`                | no     | Build.                                                                                        |
 | `NODE_ENV`                  | `production`        | no     |                                                                                               |
 | `TRUST_PROXY`               | `1`                 | no     | Client IP for rate limits. Missing: all visitors share one bucket.                            |
@@ -53,8 +54,8 @@ region; the region cannot be changed later). Open **Connect** and copy two strin
 
 ### 2. First migration and seed, from your machine (you)
 
-Do this _before_ creating the Render service, so the site never serves an empty database and the first Render
-pre-deploy is a harmless no-op that proves the mechanism. In a fresh shell:
+Do this _before_ creating the Render service, so the site never serves an empty database. Render Free has no
+pre-deploy step, so this manual run is the only migration the first deploy needs. In a fresh shell:
 
 ```powershell
 $env:DIRECT_DATABASE_URL = Read-Host "Neon DIRECT url"   # paste when prompted
@@ -71,22 +72,26 @@ role can do it. Close the shell afterwards.
 ### 3. Create the Render service (you)
 
 Render dashboard: **New > Blueprint**, connect GitHub, choose the repository and branch `main`. Render reads
-`render.yaml`. Check the price shown, region Ohio and plan `0.5c-512mb`. When asked for the two secrets, paste the
-**pooled** URL into `DATABASE_URL` and the **direct** URL into `DIRECT_DATABASE_URL`. Confirm. The service name
+`render.yaml`. Check the price shown ($0), region Ohio and plan `free`. When asked for the secret, paste the
+**pooled** URL into `DATABASE_URL`. Do not add the direct URL to Render. Confirm. The service name
 decides the URL (`https://<name>.onrender.com`); a taken name gets a suffix.
 
 Behaviour to expect (render.com/docs/deploys, /docs/infrastructure-as-code): the Blueprint creates only this one web service (no
 Render database). Render does not say whether creating it also starts a first deploy, so assume it does: that is why Neon is
-migrated and seeded first, making the first pre-deploy a no-op. `autoDeployTrigger: checksPass` then deploys a commit on `main`
+migrated and seeded first. `autoDeployTrigger: checksPass` then deploys a commit on `main`
 only after all of its checks pass; a failing check, or **no checks detected**, means no deploy, and Render does not document how
 long it waits for checks to appear. If a green merge to `main` produces no deploy, use **Manual Deploy > Deploy latest commit**
 once CI is green. Later pushes that change `render.yaml` redeploy the service automatically (Blueprint auto sync).
 
 ### 4. Watch the first deploy
 
-Expected in the logs: build (`npm ci`, build), pre-deploy `No pending migrations to apply`, then
-`Serving web app from ...` and `DeadSpace API listening on port 10000`. Then `GET <url>/api/health` must be 200 with a
-`postgisVersion`. Stop if it is not.
+Expected in the logs: build (`npm ci`, build), then `Serving web app from ...` and
+`DeadSpace API listening on port 10000`. Then `GET <url>/api/health` must be 200 with a `postgisVersion`. Stop if it is not.
+
+**Warm up before every smoke test or demo.** A Free service that has been idle 15 minutes needs about a minute to wake, and Neon
+may need a few more seconds. Request `<url>/api/livez`, then `<url>/api/health`, and wait for 200 on both (retry; the first
+attempts may be slow or return a gateway error) before running the smoke test. `smoke:public` itself is unchanged: its plain
+HTTP calls have no timeout and the browser checks start only after those, but it will not retry a failed first request.
 
 ### 5. Smoke test and data check
 
@@ -131,22 +136,24 @@ Against the URL you give it, with Chromium on desktop and at 390 px:
 
 - **Bad deploy:** Render dashboard, **Rollback** to the previous deploy (reuses its build; turns auto-deploy off, so re-enable it
   after the fix). Or fix forward with a pull request. A rollback does not undo a database migration.
-- **Bad migration:** the pre-deploy step fails and the previous version keeps serving. Keep migrations additive. Neon Free keeps only
-  a few hours of history, so create a Neon branch before any data-changing migration.
+- **Bad migration:** migrations are manual and run _before_ the dependent deploy, so a failing `db:deploy` simply means you do not
+  deploy; the running version is untouched. Keep migrations additive (add first, remove later) so that version, and a rollback to
+  it, still works on the new schema. Neon Free keeps only a few hours of history, so create a Neon branch before any
+  data-changing migration.
 - **Junk data:** the manual reset in [OPERATIONS.md](OPERATIONS.md).
-- **Take it offline or stop paying:** suspend or delete the Render service. Neon Free does not bill.
+- **Take it offline:** suspend or delete the Render service. Nothing here bills.
+- **Rollback depth:** Free keeps only the two most recent previous deploys.
 - **Neon quota reached:** compute suspends or writes block; data is kept until the next month or an upgrade.
 - **Keeping the demo fresh:** reseed before the seeded horizon runs out (`npm run db:status` shows the date; see OPERATIONS.md).
 
 ## Things to watch on the first deploy (not confirmable beforehand)
 
-1. Pre-deploy finds the Prisma CLI (the build installs dev dependencies). If not, move `db:deploy` to the end of the build command.
-2. Runtime on Neon's pooled endpoint works with the `pg` driver. Neon says to use pooled connections by default and that
+1. Runtime on Neon's pooled endpoint works with the `pg` driver. Neon says to use pooled connections by default and that
    protocol-level prepared statements work through its pooler; `@prisma/adapter-pg` uses unnamed statements unless a
    `statementNameGenerator` is configured (we configure none), and Neon strings carrying `channel_binding=require` are accepted
    (`pg` ignores that parameter). If the smoke test still shows prepared-statement or connection errors, point `DATABASE_URL` at the
    direct URL instead.
-3. **Rate-limit key (`TRUST_PROXY`).** Render's own article says all inbound traffic passes through Cloudflare and Render's load
+2. **Rate-limit key (`TRUST_PROXY`).** Render's own article says all inbound traffic passes through Cloudflare and Render's load
    balancers (two proxies), but Render does not document the hop count. `TRUST_PROXY=1` is the fail-safe value: a forged header can
    never choose the bucket, but if two proxies are in front, the key is the Cloudflare edge address and nearby visitors share
    buckets. Prove what the key is, with no code change: the limiter's `RateLimit-Policy` header carries `pk=:<hash of the key>:`.
@@ -159,6 +166,8 @@ Against the URL you give it, with Chromium on desktop and at 390 px:
    on a shared edge address: set `TRUST_PROXY=2` in Render and repeat both this comparison and the smoke test. `2` is only acceptable if
    the hashes match **and** the smoke test's forged-header check passes (with `2` and only one proxy a forged header would choose the
    bucket, and that check would fail).
-4. The first request after five idle minutes wakes Neon (a fraction of a second to a few seconds). Load the site once before a demo.
-5. Render's health check polls every few seconds. It uses `/api/livez` (no database) so Neon can still suspend; do not point it at
-   `/api/health`, which would keep Neon awake all month and exhaust the free 100 compute-hours.
+3. Cold starts stack: Render Free wakes in about a minute, and the first database request after five idle minutes also wakes Neon
+   (a fraction of a second to a few seconds). Follow the warm-up in step 4 of the first deployment before a demo.
+4. Render's health check uses `/api/livez` (no database) so Neon can still suspend; do not point it at `/api/health`, which would
+   keep Neon awake and exhaust the free 100 compute-hours. Render's docs do not say whether health-check polling keeps a Free
+   service awake: after the first deploy, check in the Render logs that the service really spins down when idle. If it never sleeps, 750 hours still covers one service for a month.

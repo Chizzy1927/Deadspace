@@ -29,17 +29,17 @@ describe('render.yaml', () => {
   const vars = envVars();
   const byKey = Object.fromEntries(vars.map((v) => [v.key, v]));
 
-  it('runs one always-on paid Node web service built, migrated and started the way the runbook says', () => {
+  it('runs one Free-plan Node web service built and started the way the runbook says, with no pre-deploy', () => {
     expect(field('type')).toBe('web');
     expect(field('runtime')).toBe('node');
-    expect(field('plan')).toBe('0.5c-512mb'); // paid, always on; the free plan sleeps and has no pre-deploy
+    expect(field('plan')).toBe('free'); // spins down when idle; the free plan has no pre-deploy command
     expect(field('buildCommand')).toBe('npm ci --include=dev && npm run build');
-    expect(field('preDeployCommand')).toBe('npm run db:deploy -w apps/api');
+    expect(field('preDeployCommand')).toBeUndefined(); // migrations are manual (docs/OPERATIONS.md)
     expect(field('startCommand')).toBe('npm run start -w apps/api');
   });
 
   it('never seeds or migrates at startup, and never seeds automatically at all', () => {
-    for (const command of ['buildCommand', 'preDeployCommand', 'startCommand']) {
+    for (const command of ['buildCommand', 'startCommand']) {
       expect(field(command)).not.toMatch(/seed/);
     }
     expect(field('startCommand')).not.toMatch(/migrate|db:deploy/);
@@ -63,11 +63,10 @@ describe('render.yaml', () => {
     expect(blueprint).not.toMatch(/^\s*[^#\n]*VITE_API_URL/m);
   });
 
-  it('holds the two database URLs as prompted secrets, never as values', () => {
-    for (const key of ['DATABASE_URL', 'DIRECT_DATABASE_URL']) {
-      expect(byKey[key]?.sync).toBe('false');
-      expect(byKey[key]?.value).toBeUndefined();
-    }
+  it('holds the pooled database URL as a prompted secret and never gives Render the direct one', () => {
+    expect(byKey.DATABASE_URL?.sync).toBe('false');
+    expect(byKey.DATABASE_URL?.value).toBeUndefined();
+    expect(vars.map((v) => v.key)).not.toContain('DIRECT_DATABASE_URL'); // only manual migrations use it
     expect(blueprint).not.toMatch(/postgres(ql)?:\/\//i);
   });
 
