@@ -11,7 +11,12 @@ import { MockGeocoder } from '../../src/geocoding/mock.js';
 import { TRUCK_SCORE_WEIGHTS } from '../../src/matching/config.js';
 import { weightedScore } from '../../src/matching/truck-score.js';
 import { createTruckLeg, toTruckLegCreateData } from '../../src/repositories/truck-leg.repository.js';
-import { buildSeedTruckLegs, defaultSeedAnchor } from '../../prisma/seed-data/truck-legs.js';
+import { insertMissingTruckLegs } from '../../prisma/seed-data/truck-leg-writer.js';
+import {
+  buildSeedTruckLegSchedule,
+  buildSeedTruckLegsForDay,
+  defaultSeedAnchor,
+} from '../../prisma/seed-data/truck-legs.js';
 import { createTestApp, createTestPrisma, DALLAS, HOUSTON, truckLegInput } from './helpers.js';
 
 const prisma = createTestPrisma();
@@ -230,14 +235,18 @@ describe('create request → get matches (real PostGIS)', () => {
   });
 });
 
+/** Seed ids embed the departure date (`seed-truck-leg-20261112-01`); tests refer to a leg by its layout key (`01`). */
+const legKey = (id: string) => id.replace(/^seed-truck-leg-\d{8}-/, '');
+
 describe('seeded scenario: Dallas → Houston (real PostGIS + deterministic seed)', () => {
   it('ranks the on-route seed legs first and excludes infeasible ones with sensible metrics', async () => {
     const anchor = defaultSeedAnchor(new Date());
-    const seed = await buildSeedTruckLegs(anchor, new MockGeocoder());
+    // The whole layout on one day (ignoring each leg's alternate-day schedule), so the scenario stays complete.
+    const seed = await buildSeedTruckLegsForDay(anchor, new MockGeocoder(), { allLegs: true });
     await prisma.truckLeg.createMany({ data: seed.map(({ id, input }) => ({ id, ...toTruckLegCreateData(input) })) });
 
-    // A dry-van shipment of 6 pallets, ready day 1 between 12:00 and 20:00 UTC.
-    const day1 = (hour: number) => new Date(anchor.getTime() + (24 + hour) * 3_600_000).toISOString();
+    // A dry-van shipment of 6 pallets, ready that day between 12:00 and 20:00 UTC.
+    const day1 = (hour: number) => new Date(anchor.getTime() + hour * 3_600_000).toISOString();
     const created = await request(app)
       .post('/api/transport-requests')
       .send(requestPayload({ pickupEarliest: day1(12), pickupLatest: day1(20), maxBudget: undefined }));
@@ -248,7 +257,7 @@ describe('seeded scenario: Dallas → Houston (real PostGIS + deterministic seed
 
     // Phase 3 weighted scores; the order is unchanged from Phase 2 (scores were 100, 100, 100, 98,
     // 78, 30 under route efficiency alone). No budget, so price is against the $670 median.
-    const ranked = matches.map((m) => [m.leg.id.replace('seed-truck-leg-', ''), m.score] as const);
+    const ranked = matches.map((m) => [legKey(m.leg.id), m.score] as const);
     expect(ranked).toEqual([
       // Dallas → Houston, zero detour. 02 is part-loaded: the request takes half its spare pallets.
       ['02', 87],
@@ -262,14 +271,14 @@ describe('seeded scenario: Dallas → Houston (real PostGIS + deterministic seed
       ['14', 42],
     ]);
 
-    // Excluded for the intended reasons: 03 reefer, 04 flatbed, 05 departs day 5, 06 only 2 spare
+    // Excluded for the intended reasons: 03 reefer, 04 flatbed, 06 only 2 spare
     // pallets, 15/16 wrong direction, 09–12 detours over 100 est. mi.
-    const ids = matches.map((m) => m.leg.id);
-    for (const key of ['03', '04', '05', '06', '09', '10', '11', '12', '15', '16']) {
-      expect(ids).not.toContain(`seed-truck-leg-${key}`);
+    const keys = matches.map((m) => legKey(m.leg.id));
+    for (const key of ['03', '04', '06', '09', '10', '11', '12', '15', '16']) {
+      expect(keys).not.toContain(key);
     }
 
-    const byKey = (key: string) => matches.find((m) => m.leg.id === `seed-truck-leg-${key}`);
+    const byKey = (key: string) => matches.find((m) => legKey(m.leg.id) === key);
     expect(byKey('01')?.metrics.estEmptyMilesRecovered).toBeGreaterThan(260);
     expect(byKey('02')?.metrics.estEmptyMilesRecovered).toBeNull();
     expect(byKey('02')?.reasons).toContain('Your load takes the trailer from 54% to 77% full (by pallets)');
@@ -279,7 +288,7 @@ describe('seeded scenario: Dallas → Houston (real PostGIS + deterministic seed
     // matches. Only 02 ($2.10/mi × est. loaded miles ≈ $567) is at least 10% under it.
     expect(matches.every((m) => m.metrics.priceReference.basis === 'MATCH_MEDIAN')).toBe(true);
     expect(byKey('02')?.metrics.priceReference.amount).toBe(670);
-    const highlighted = matches.map((m) => [m.leg.id.replace('seed-truck-leg-', ''), m.highlights.map((h) => h.code)]);
+    const highlighted = matches.map((m) => [legKey(m.leg.id), m.highlights.map((h) => h.code)]);
     expect(highlighted).toEqual([
       ['02', ['ON_ROUTE', 'BELOW_TYPICAL_PRICE']],
       ['07', ['ON_ROUTE', 'COMFORTABLE_SCHEDULE']],
@@ -297,8 +306,10 @@ describe('demo transport request (real PostGIS + deterministic seed)', () => {
     ['the day it was seeded', 0],
     ['a day after it was seeded', 24],
   ])('finds on-route seeded trucks %s', async (_label, hoursLater) => {
-    const seed = await buildSeedTruckLegs(defaultSeedAnchor(new Date()), new MockGeocoder());
-    await prisma.truckLeg.createMany({ data: seed.map(({ id, input }) => ({ id, ...toTruckLegCreateData(input) })) });
+    await insertMissingTruckLegs(
+      prisma,
+      await buildSeedTruckLegSchedule(defaultSeedAnchor(new Date()), new MockGeocoder()),
+    );
 
     const demoNow = new Date(Date.now() + hoursLater * 3_600_000);
     const created = await request(app).post('/api/transport-requests').send(buildDemoTransportRequest(demoNow));
@@ -308,7 +319,7 @@ describe('demo transport request (real PostGIS + deterministic seed)', () => {
     );
     const { matches } = TransportMatchesResponseSchema.parse(res.body);
 
-    const keys = matches.map((m) => m.leg.id.replace('seed-truck-leg-', ''));
+    const keys = matches.map((m) => legKey(m.leg.id));
     expect(keys.length).toBeGreaterThanOrEqual(3);
     expect(keys.slice(0, 3)).toEqual(expect.arrayContaining(['01', '02', '07']));
   });

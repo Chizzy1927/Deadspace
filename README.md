@@ -117,15 +117,15 @@ Other scripts: `npm run lint`, `npm run typecheck`, `npm run build`, `npm run db
 
 ## Preparing a demo
 
-The seed dates its data relative to the **next UTC midnight at the moment you seed**, so seeded trips and warehouse windows slide forward each time you run it. A database seeded days ago can return no matches for a fresh request. To get reliable results:
+Truck legs are seeded per departure day for the next 46 days, so the transport example keeps working for about 45 days after you seed; warehouse windows are longer. Reseeding adds the newer days and never moves existing rows. Details and the reseed schedule are in [docs/OPERATIONS.md](docs/OPERATIONS.md). To get reliable results:
 
 1. Start the database: `docker compose up -d`
 2. Migrate: `npm run db:migrate`
-3. **Re-seed on demo day:** `npm run db:seed`. It is idempotent: it upserts fixed demo records and does not touch rows created through the app.
+3. **Seed (and re-seed when the horizon runs low):** `npm run db:seed`. It is idempotent: it inserts only the missing truck-leg days, upserts the warehouses, and does not touch rows created through the app.
 4. Start the app: `npm run dev`
 5. On the landing page, use **"See a demo request"** or the **"Try it with an example"** links on the "I need capacity" cards. They open the request form pre-filled (Dallas to Houston transport, or Dallas storage). Review it and submit; it is not submitted for you.
 
-The example requests are built from the same anchor calculation the seed uses, and a transport demo window tolerates one UTC midnight passing between seeding and the demo. If more than about a day has passed since seeding, run `npm run db:seed` again. Integration tests check that both example requests return matches against the seeded data.
+The example requests are built relative to the visitor's own next UTC midnight. If it has been more than about 45 days since you seeded, run `npm run db:seed` again. Integration tests check that the transport example returns the intended matches on every day of the horizon, and that both examples match freshly seeded data.
 
 ## Testing
 
