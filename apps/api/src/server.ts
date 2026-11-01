@@ -13,10 +13,16 @@ const app = createApp({
   checkDatabase: createDatabaseHealthCheck(() => getPostgisVersion(prisma)),
   prisma,
   geocoder: createGeocoder(env, prisma),
+  trustProxy: env.TRUST_PROXY,
+  demoPolicy: {
+    listingCreationEnabled: env.DEMO_LISTING_CREATION,
+    writeRateLimit: { limit: env.WRITE_RATE_LIMIT_PER_HOUR, windowMs: 60 * 60_000 },
+    maxRowsPerTable: env.MAX_ROWS_PER_TABLE,
+  },
 });
 
 const server = app.listen(env.PORT, () => {
-  console.log(`DeadSpace API listening on http://localhost:${env.PORT}`);
+  console.log(`DeadSpace API listening on port ${env.PORT}`);
 });
 
 function shutdown() {

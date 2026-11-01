@@ -5,6 +5,8 @@ export const ApiErrorCode = z.enum([
   'VALIDATION_ERROR',
   'NOT_FOUND',
   'RATE_LIMITED',
+  'FEATURE_DISABLED',
+  'DEMO_FULL',
   'UPSTREAM_ERROR',
   'INTERNAL_ERROR',
 ]);

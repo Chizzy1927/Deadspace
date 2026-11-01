@@ -1,6 +1,7 @@
 import { CreateStorageRequestInputSchema, CreateWarehouseSpaceInputSchema } from '@deadspace/shared';
 import { Router } from 'express';
 import type { PrismaClient } from '../db.js';
+import { createWriteGuards, type DemoPolicy } from '../middleware/demo-policy.js';
 import { sendNotFound, sendValidationError } from '../middleware/validation.js';
 import {
   createWarehouseListing,
@@ -10,14 +11,21 @@ import {
   submitStorageRequest,
 } from '../services/storage.service.js';
 
-export function storageRouter(prisma: PrismaClient): Router {
+export function storageRouter(prisma: PrismaClient, policy?: DemoPolicy): Router {
   const router = Router();
+  const guards = createWriteGuards(policy);
 
-  router.post('/warehouse-spaces', async (req, res) => {
-    const parsed = CreateWarehouseSpaceInputSchema.safeParse(req.body);
-    if (!parsed.success) return sendValidationError(res, parsed.error);
-    res.status(201).json(await createWarehouseListing(prisma, parsed.data));
-  });
+  router.post(
+    '/warehouse-spaces',
+    guards.listing(),
+    guards.rateLimit(),
+    guards.rowCap(() => prisma.warehouseSpace.count()),
+    async (req, res) => {
+      const parsed = CreateWarehouseSpaceInputSchema.safeParse(req.body);
+      if (!parsed.success) return sendValidationError(res, parsed.error);
+      res.status(201).json(await createWarehouseListing(prisma, parsed.data));
+    },
+  );
 
   router.get('/warehouse-spaces/:id', async (req, res) => {
     const space = await getWarehouseSpace(prisma, req.params.id);
@@ -25,11 +33,16 @@ export function storageRouter(prisma: PrismaClient): Router {
     res.json(space);
   });
 
-  router.post('/storage-requests', async (req, res) => {
-    const parsed = CreateStorageRequestInputSchema.safeParse(req.body);
-    if (!parsed.success) return sendValidationError(res, parsed.error);
-    res.status(201).json(await submitStorageRequest(prisma, parsed.data));
-  });
+  router.post(
+    '/storage-requests',
+    guards.rateLimit(),
+    guards.rowCap(() => prisma.storageRequest.count()),
+    async (req, res) => {
+      const parsed = CreateStorageRequestInputSchema.safeParse(req.body);
+      if (!parsed.success) return sendValidationError(res, parsed.error);
+      res.status(201).json(await submitStorageRequest(prisma, parsed.data));
+    },
+  );
 
   router.get('/storage-requests/:id', async (req, res) => {
     const request = await getStorageRequest(prisma, req.params.id);

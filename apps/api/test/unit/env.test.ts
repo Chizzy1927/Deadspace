@@ -7,6 +7,24 @@ describe('loadEnv', () => {
     expect(env).toMatchObject({ PORT: 3001, WEB_ORIGIN: 'http://localhost:5173', NODE_ENV: 'development' });
   });
 
+  it('defaults demo write controls to open listing creation, 30 creates/hour and 5000 rows/table', () => {
+    const env = loadEnv({ DATABASE_URL: 'postgresql://u:p@localhost:5432/db' });
+    expect(env).toMatchObject({
+      TRUST_PROXY: 0,
+      DEMO_LISTING_CREATION: true,
+      WRITE_RATE_LIMIT_PER_HOUR: 30,
+      MAX_ROWS_PER_TABLE: 5000,
+    });
+  });
+
+  it('parses demo write controls from strings and rejects bad values', () => {
+    const base = { DATABASE_URL: 'postgresql://u:p@localhost:5432/db' };
+    const env = loadEnv({ ...base, TRUST_PROXY: '1', DEMO_LISTING_CREATION: 'false', WRITE_RATE_LIMIT_PER_HOUR: '10' });
+    expect(env).toMatchObject({ TRUST_PROXY: 1, DEMO_LISTING_CREATION: false, WRITE_RATE_LIMIT_PER_HOUR: 10 });
+    expect(() => loadEnv({ ...base, DEMO_LISTING_CREATION: 'no' })).toThrow(/DEMO_LISTING_CREATION/);
+    expect(() => loadEnv({ ...base, MAX_ROWS_PER_TABLE: '0' })).toThrow(/MAX_ROWS_PER_TABLE/);
+  });
+
   it('fails fast when DATABASE_URL is missing', () => {
     expect(() => loadEnv({})).toThrow(/DATABASE_URL/);
   });
