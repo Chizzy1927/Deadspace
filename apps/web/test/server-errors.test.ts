@@ -53,3 +53,36 @@ describe('submitErrorMessage', () => {
     expect(submitErrorMessage(new TypeError('Failed to fetch'), FIELDS, setError)).toBe('Failed to fetch');
   });
 });
+
+describe('submitErrorMessage for the public-demo guard rails', () => {
+  const cases: [code: 'FEATURE_DISABLED' | 'RATE_LIMITED' | 'DEMO_FULL', status: number, expected: RegExp][] = [
+    ['FEATURE_DISABLED', 403, /turned off in this public demo.*nothing was saved/s],
+    ['RATE_LIMITED', 429, /limits how much one visitor can create.*nothing was saved/s],
+    ['DEMO_FULL', 503, /reached its storage limit.*nothing was saved/s],
+  ];
+
+  it.each(cases)('explains %s in plain language instead of echoing the raw API message', (code, status, expected) => {
+    const { calls, setError } = recorder();
+    const message = submitErrorMessage(new ApiError(status, code, 'raw api text'), FIELDS, setError);
+
+    expect(message).toMatch(expected);
+    expect(message).not.toContain('raw api text');
+    expect(calls).toEqual([]);
+  });
+
+  it('gives the guard-rail message even when the response carries no issues', () => {
+    const { setError } = recorder();
+    expect(submitErrorMessage(new ApiError(403, 'FEATURE_DISABLED', 'x', []), FIELDS, setError)).toContain(
+      'turned off in this public demo',
+    );
+  });
+
+  it('leaves ordinary validation handling alone', () => {
+    const { calls, setError } = recorder();
+    const error = new ApiError(400, 'VALIDATION_ERROR', 'Invalid request', [
+      { path: 'origin', message: 'Pick a place' },
+    ]);
+    expect(submitErrorMessage(error, FIELDS, setError)).toBeNull();
+    expect(calls).toEqual([['origin', 'Pick a place']]);
+  });
+});

@@ -1,4 +1,4 @@
-import type { TruckLeg } from '@deadspace/shared';
+import { isSampleDataId, type TruckLeg } from '@deadspace/shared';
 import type { ReactNode } from 'react';
 import {
   formatDateTime,
@@ -8,6 +8,7 @@ import {
   formatWindow,
   TRAILER_LABELS,
 } from '../format';
+import { SampleBadge } from './SampleBadge';
 
 function Row({ term, children }: { term: string; children: ReactNode }) {
   return (
@@ -24,6 +25,11 @@ export function TruckLegSummary({ leg }: { leg: TruckLeg }) {
   const spareWeight = leg.totalWeightLbs - leg.committedWeightLbs;
   return (
     <dl className="divide-y divide-slate-100">
+      {isSampleDataId(leg.id) && (
+        <Row term="Data">
+          <SampleBadge id={leg.id} /> <span className="text-sm text-slate-600">Fictional demo listing.</span>
+        </Row>
+      )}
       <Row term="Route">
         {leg.origin.label} → {leg.destination.label}
       </Row>

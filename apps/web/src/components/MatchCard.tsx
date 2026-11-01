@@ -2,6 +2,7 @@ import type { TransportMatch } from '@deadspace/shared';
 import { formatMiles, formatPercent, formatUsd, formatWindow, TRAILER_LABELS } from '../format';
 import { Estimate } from './Estimate';
 import { Highlights, Metric } from './MatchParts';
+import { ContactLine, SampleBadge } from './SampleBadge';
 import { ScoreBreakdown } from './ScoreBreakdown';
 
 export function MatchCard({
@@ -29,7 +30,10 @@ export function MatchCard({
       <header className="flex items-start justify-between gap-4">
         <div>
           <p className="text-sm text-slate-500">#{rank}</p>
-          <Heading className="text-lg font-semibold">{leg.companyName}</Heading>
+          <div className="flex flex-wrap items-center gap-2">
+            <Heading className="text-lg font-semibold">{leg.companyName}</Heading>
+            <SampleBadge id={leg.id} />
+          </div>
           <p className="text-slate-700">
             {leg.origin.label} → {leg.destination.label}
           </p>
@@ -85,13 +89,7 @@ export function MatchCard({
         ))}
       </ul>
 
-      {showContact && (
-        <p className="mt-4 text-sm">
-          <a className="text-blue-700 hover:underline" href={`mailto:${leg.contactEmail}`}>
-            Contact {leg.contactName}
-          </a>
-        </p>
-      )}
+      {showContact && <ContactLine id={leg.id} name={leg.contactName} email={leg.contactEmail} />}
     </article>
   );
 }

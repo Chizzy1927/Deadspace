@@ -12,6 +12,7 @@ import { Controller, type FieldErrors, useForm, useWatch } from 'react-hook-form
 import { useNavigate } from 'react-router';
 import { createStorageRequest, fetchStorageRequest } from '../api/storage';
 import { EditFromNotice } from '../components/EditSearch';
+import { DemoCoverageHint } from '../components/DemoCoverage';
 import { ExampleFill } from '../components/ExampleFill';
 import { Field } from '../components/Field';
 import { LocationInput } from '../components/LocationInput';
@@ -134,6 +135,7 @@ function StorageRequestForm({ previous, notice }: StorageRequestFormProps) {
           Tell us how many pallet positions you need, where and for how long. We match it against idle warehouse space
           operators have offered.
         </p>
+        <DemoCoverageHint kind="storage" />
         <ExampleFill onFill={fill} filled={fillCount > 0} />
         <div className="mt-2">{notice}</div>
       </div>

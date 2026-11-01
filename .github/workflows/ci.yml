@@ -64,7 +64,7 @@ jobs:
         run: npm run build
 
       - name: Apply migrations
-        run: npm exec -w apps/api -- prisma migrate deploy
+        run: npm run db:deploy
 
       # The service DB is fresh, so after `migrate deploy` it is exactly "all migrations replayed".
       # Fails (exit 2) if schema.prisma and the migrations disagree, e.g. a forgotten migration or

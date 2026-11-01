@@ -1,0 +1,3 @@
+# Portfolio demo with fictional data: please do not index.
+User-agent: *
+Disallow: /

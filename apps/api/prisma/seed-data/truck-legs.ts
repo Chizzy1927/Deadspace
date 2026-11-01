@@ -1,29 +1,64 @@
 // Deterministic truck-leg seed data. Locations resolve through MockGeocoder (fixed coordinates,
-// never a network call). Times are fixed offsets from an anchor (the next UTC midnight by default),
-// so the layout is identical on every run while dates stay inside the 30-day validation horizon.
+// never a network call).
 //
-// The set is shaped to exercise the future matching engine around a Dallas -> Houston request:
-// on-route legs, small and large detours, reverse direction, trailer mismatches, insufficient
-// spare capacity, departure-window mismatches and arrive-by commitments, plus regional variety.
+// The legs below are fictional carrier movements. Each has a stable key and runs on actual calendar
+// days (its `schedule`), departing at `hourUtc` on each of them. The database holds one row per leg per
+// departure day, so every day in the horizon has inventory and no seed run ever has to move any:
+//   - A row's id embeds its departure date and the leg key (`seed-truck-leg-20261112-01`), and every
+//     value is derived from (departure day, leg) alone. A row is therefore identical on every run, and
+//     seeding only ever inserts rows that are missing; it never updates or removes existing ones, so a
+//     request's historical matches do not change.
+//   - Most legs run DAILY. The six legs the standard demo request can match (dry-van Dallas -> Houston
+//     and its feeders) run on alternate days, three on even days and three on odd days (counted in
+//     days since the Unix epoch). The demo's pickup window is 32 h wide and always spans one even and
+//     one odd day, so it shows each of those carriers exactly once, never a duplicate copy, while
+//     every single day still has dry-van corridor inventory.
+//   - A seed run creates departure days from the day before its anchor through SEED_LAST_DAY_OFFSET
+//     days after it.
+//
+// There is intentionally no "departs too late" leg (the former leg 05, an on-route dry van on day 5). In a
+// continuous schedule every day lies inside some visitor's window, so such a leg would be a normal
+// on-route match for the standard demo request. Timing feasibility is covered directly by the matching tests.
+//
+// The set is shaped to exercise the matching engine around a Dallas -> Houston request: on-route
+// legs, small and large detours, reverse direction, trailer mismatches, insufficient spare capacity
+// and arrive-by commitments, plus regional variety.
 import {
   type CreateTruckLegInput,
   createTruckLegInputSchema,
   type LoadState,
   nextUtcMidnight,
+  toCalendarDate,
+  utcStartOfDay,
   type TrailerType,
   type TruckPricingBasis,
 } from '@deadspace/shared';
 import type { Geocoder, Place } from '../../src/geocoding/geocoder.js';
 
 const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+/**
+ * The demo is guaranteed for a visitor whose request anchor (their next UTC midnight) is at most this
+ * many days after the seed anchor: the standard request needs that day and the one after it.
+ */
+export const SEED_HORIZON_DAYS = 45;
+/** The last departure day a seed run creates, in days after its anchor: the horizon plus the demo window's second day. */
+export const SEED_LAST_DAY_OFFSET = SEED_HORIZON_DAYS + 1;
+/** The first departure day a seed run creates, in days after its anchor (-1 is the seed day itself). */
+export const SEED_FIRST_DAY_OFFSET = -1;
+
+/** Which days a leg runs: every day, or only even / odd days counted since the Unix epoch. */
+export type SeedSchedule = 'DAILY' | 'EVEN_DAYS' | 'ODD_DAYS';
 
 interface SeedLeg {
   key: string;
   company: [name: string, contact: string];
   from: string;
   to: string;
-  /** Departure window start: day offset from the anchor and hour (UTC). */
-  day: number;
+  /** The days the leg runs. */
+  schedule: SeedSchedule;
+  /** Departure window start, in hours after UTC midnight of each day it runs. */
   hourUtc: number;
   windowHours: number;
   /** Optional fixed next commitment, in hours after the window start. */
@@ -48,7 +83,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Lone Star Freight', 'Dana Ortiz'],
     from: 'Dallas, TX',
     to: 'Houston, TX',
-    day: 1,
+    schedule: 'EVEN_DAYS',
     hourUtc: 13,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -62,7 +97,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Gulf Coast Carriers', 'Marcus Reed'],
     from: 'Dallas, TX',
     to: 'Houston, TX',
-    day: 1,
+    schedule: 'EVEN_DAYS',
     hourUtc: 15,
     windowHours: 4,
     arriveByAfterHours: 15,
@@ -78,7 +113,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Bluebonnet Cold Chain', 'Priya Shah'],
     from: 'Dallas, TX',
     to: 'Houston, TX',
-    day: 1,
+    schedule: 'DAILY',
     hourUtc: 12,
     windowHours: 8,
     loadState: 'EMPTY',
@@ -91,7 +126,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Red River Flatbed', 'Cole Jennings'],
     from: 'Dallas, TX',
     to: 'Houston, TX',
-    day: 2,
+    schedule: 'DAILY',
     hourUtc: 14,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -100,25 +135,11 @@ const SEED_LEGS: readonly SeedLeg[] = [
     price: ['FLAT', 720],
   },
   {
-    key: '05',
-    company: ['Trinity Logistics', 'Alana Brooks'],
-    from: 'Dallas, TX',
-    to: 'Houston, TX',
-    day: 5,
-    hourUtc: 13,
-    windowHours: 6,
-    loadState: 'EMPTY',
-    trailer: 'DRY_VAN',
-    capacity: DRY_VAN_53,
-    price: ['FLAT', 600],
-    notes: 'Later in the week.',
-  },
-  {
     key: '06',
     company: ['Prairie Line Transport', 'Victor Hale'],
     from: 'Dallas, TX',
     to: 'Houston, TX',
-    day: 1,
+    schedule: 'DAILY',
     hourUtc: 14,
     windowHours: 5,
     loadState: 'PARTIAL',
@@ -133,7 +154,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Metroplex Haulers', 'Jordan Kim'],
     from: 'Dallas, TX',
     to: 'Houston, TX',
-    day: 1,
+    schedule: 'ODD_DAYS',
     hourUtc: 16,
     windowHours: 4,
     loadState: 'EMPTY',
@@ -149,7 +170,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Cowtown Carriers', 'Reese Walker'],
     from: 'Fort Worth, TX',
     to: 'Houston, TX',
-    day: 1,
+    schedule: 'ODD_DAYS',
     hourUtc: 12,
     windowHours: 8,
     loadState: 'EMPTY',
@@ -162,7 +183,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Navarro Trucking', 'Hector Morales'],
     from: 'Corsicana, TX',
     to: 'Houston, TX',
-    day: 1,
+    schedule: 'DAILY',
     hourUtc: 15,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -175,7 +196,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Piney Woods Freight', 'Tessa Grant'],
     from: 'Dallas, TX',
     to: 'Huntsville, TX',
-    day: 1,
+    schedule: 'DAILY',
     hourUtc: 13,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -188,7 +209,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Brazos Valley Lines', 'Owen Pierce'],
     from: 'Waco, TX',
     to: 'Houston, TX',
-    day: 1,
+    schedule: 'DAILY',
     hourUtc: 14,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -201,7 +222,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Rose City Transport', 'Maya Collins'],
     from: 'Tyler, TX',
     to: 'Houston, TX',
-    day: 1,
+    schedule: 'DAILY',
     hourUtc: 13,
     windowHours: 8,
     loadState: 'PARTIAL',
@@ -215,7 +236,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Sooner Express', 'Brett Lawson'],
     from: 'Oklahoma City, OK',
     to: 'Houston, TX',
-    day: 1,
+    schedule: 'ODD_DAYS',
     hourUtc: 6,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -229,7 +250,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Big Thicket Hauling', 'Nina Park'],
     from: 'Dallas, TX',
     to: 'Beaumont, TX',
-    day: 1,
+    schedule: 'EVEN_DAYS',
     hourUtc: 13,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -243,7 +264,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Alamo Freightways', 'Luis Ramirez'],
     from: 'Dallas, TX',
     to: 'San Antonio, TX',
-    day: 1,
+    schedule: 'DAILY',
     hourUtc: 13,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -256,7 +277,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Bayou City Logistics', 'Erin Foster'],
     from: 'Houston, TX',
     to: 'Dallas, TX',
-    day: 1,
+    schedule: 'DAILY',
     hourUtc: 13,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -269,7 +290,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Capital Carriers', 'Sam Whitaker'],
     from: 'Dallas, TX',
     to: 'Austin, TX',
-    day: 1,
+    schedule: 'DAILY',
     hourUtc: 14,
     windowHours: 6,
     loadState: 'PARTIAL',
@@ -284,7 +305,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Hill Country Reefer', 'Grace Liu'],
     from: 'Austin, TX',
     to: 'Houston, TX',
-    day: 2,
+    schedule: 'DAILY',
     hourUtc: 13,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -297,7 +318,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Mission Road Freight', 'Diego Castillo'],
     from: 'San Antonio, TX',
     to: 'Houston, TX',
-    day: 2,
+    schedule: 'DAILY',
     hourUtc: 12,
     windowHours: 8,
     loadState: 'EMPTY',
@@ -310,7 +331,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Ship Channel Transport', 'Kara Nguyen'],
     from: 'Houston, TX',
     to: 'San Antonio, TX',
-    day: 2,
+    schedule: 'DAILY',
     hourUtc: 14,
     windowHours: 6,
     loadState: 'PARTIAL',
@@ -324,7 +345,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Colorado River Lines', 'Ben Archer'],
     from: 'Austin, TX',
     to: 'Dallas, TX',
-    day: 2,
+    schedule: 'DAILY',
     hourUtc: 15,
     windowHours: 5,
     loadState: 'EMPTY',
@@ -337,7 +358,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Border Steel Haulers', 'Rosa Delgado'],
     from: 'San Antonio, TX',
     to: 'Laredo, TX',
-    day: 2,
+    schedule: 'DAILY',
     hourUtc: 13,
     windowHours: 6,
     loadState: 'PARTIAL',
@@ -351,7 +372,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Coastal Bend Cold Storage', 'Ian Mercer'],
     from: 'Corpus Christi, TX',
     to: 'Houston, TX',
-    day: 2,
+    schedule: 'DAILY',
     hourUtc: 11,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -364,7 +385,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Ark-La-Tex Freight', 'Molly Dunn'],
     from: 'Shreveport, LA',
     to: 'Dallas, TX',
-    day: 3,
+    schedule: 'DAILY',
     hourUtc: 13,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -378,7 +399,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Crescent Reefer Co.', 'Andre Baptiste'],
     from: 'Houston, TX',
     to: 'New Orleans, LA',
-    day: 2,
+    schedule: 'DAILY',
     hourUtc: 14,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -391,7 +412,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Red Dirt Transport', 'Kyle Benton'],
     from: 'Dallas, TX',
     to: 'Oklahoma City, OK',
-    day: 3,
+    schedule: 'DAILY',
     hourUtc: 13,
     windowHours: 6,
     loadState: 'PARTIAL',
@@ -405,7 +426,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Delta Run Logistics', 'Tamika Hayes'],
     from: 'Dallas, TX',
     to: 'Memphis, TN',
-    day: 3,
+    schedule: 'DAILY',
     hourUtc: 12,
     windowHours: 8,
     loadState: 'EMPTY',
@@ -418,7 +439,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Heartland Partial Loads', 'Greg Olsen'],
     from: 'Kansas City, MO',
     to: 'Dallas, TX',
-    day: 3,
+    schedule: 'DAILY',
     hourUtc: 10,
     windowHours: 6,
     loadState: 'PARTIAL',
@@ -432,7 +453,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Peach State Freight', 'Leah Simmons'],
     from: 'Houston, TX',
     to: 'Atlanta, GA',
-    day: 2,
+    schedule: 'DAILY',
     hourUtc: 12,
     windowHours: 4,
     arriveByAfterHours: 44,
@@ -448,7 +469,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['Desert Flatbed Co.', 'Ray Contreras'],
     from: 'El Paso, TX',
     to: 'Phoenix, AZ',
-    day: 4,
+    schedule: 'DAILY',
     hourUtc: 14,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -461,7 +482,7 @@ const SEED_LEGS: readonly SeedLeg[] = [
     company: ['High Plains Reefer', 'Holly Brandt'],
     from: 'Amarillo, TX',
     to: 'Denver, CO',
-    day: 4,
+    schedule: 'DAILY',
     hourUtc: 13,
     windowHours: 6,
     loadState: 'EMPTY',
@@ -479,9 +500,44 @@ export interface SeedTruckLeg {
 /** Default anchor: the next UTC midnight after `now` (shared, so the web demo requests use the same rule). */
 export const defaultSeedAnchor = nextUtcMidnight;
 
-/** Resolves and validates every seed leg; throws if any location or rule fails. */
-export async function buildSeedTruckLegs(anchor: Date, geocoder: Geocoder): Promise<SeedTruckLeg[]> {
-  const schema = createTruckLegInputSchema(() => anchor);
+const epochDay = (day: Date) => Math.floor(day.getTime() / DAY_MS);
+
+function runsOn(schedule: SeedSchedule, day: Date): boolean {
+  if (schedule === 'DAILY') return true;
+  return (epochDay(day) % 2 === 0) === (schedule === 'EVEN_DAYS');
+}
+
+/** `YYYYMMDD` of a departure day's UTC date: the date part of every id for that day. */
+function dayStamp(day: Date): string {
+  return toCalendarDate(day).replaceAll('-', '');
+}
+
+/**
+ * The departure days a seed run with this anchor must have: every UTC day from SEED_FIRST_DAY_OFFSET to
+ * SEED_LAST_DAY_OFFSET days around the anchor's UTC date. Depends only on that date.
+ */
+export function seedDepartureDays(seedAnchor: Date): Date[] {
+  const anchor = utcStartOfDay(seedAnchor).getTime();
+  const days: Date[] = [];
+  for (let offset = SEED_FIRST_DAY_OFFSET; offset <= SEED_LAST_DAY_OFFSET; offset++) {
+    days.push(new Date(anchor + offset * DAY_MS));
+  }
+  return days;
+}
+
+/**
+ * Resolves and validates the legs departing on one UTC day (`day` is that day's midnight). By default
+ * only the legs scheduled for that day; `allLegs` ignores the schedule and returns every leg, for
+ * tests that need the whole layout on a single day. Throws if any location or rule fails.
+ */
+export async function buildSeedTruckLegsForDay(
+  day: Date,
+  geocoder: Geocoder,
+  { allLegs = false }: { allLegs?: boolean } = {},
+): Promise<SeedTruckLeg[]> {
+  // Seeds are validated as of the day before departure, so every leg is a future departure.
+  const clock = new Date(day.getTime() - DAY_MS);
+  const schema = createTruckLegInputSchema(() => clock);
   const resolve = async (query: string): Promise<Pick<Place, 'label' | 'lat' | 'lng'>> => {
     const [place] = await geocoder.search(query);
     if (!place) throw new Error(`Seed location not found: ${query}`);
@@ -490,7 +546,8 @@ export async function buildSeedTruckLegs(anchor: Date, geocoder: Geocoder): Prom
 
   const legs: SeedTruckLeg[] = [];
   for (const leg of SEED_LEGS) {
-    const start = anchor.getTime() + (leg.day * 24 + leg.hourUtc) * HOUR_MS;
+    if (!allLegs && !runsOn(leg.schedule, day)) continue;
+    const start = day.getTime() + leg.hourUtc * HOUR_MS;
     const [companyName, contactName] = leg.company;
     const [committedPallets, committedWeightLbs] = leg.committed ?? [0, 0];
     const payload = {
@@ -517,7 +574,22 @@ export async function buildSeedTruckLegs(anchor: Date, geocoder: Geocoder): Prom
     };
     const parsed = schema.safeParse(payload);
     if (!parsed.success) throw new Error(`Seed leg ${leg.key} is invalid: ${parsed.error.message}`);
-    legs.push({ id: `seed-truck-leg-${leg.key}`, input: parsed.data });
+    legs.push({ id: `seed-truck-leg-${dayStamp(day)}-${leg.key}`, input: parsed.data });
   }
   return legs;
 }
+
+/** Every leg of every departure day a seed run with this anchor needs, earliest day first. */
+export async function buildSeedTruckLegSchedule(seedAnchor: Date, geocoder: Geocoder): Promise<SeedTruckLeg[]> {
+  const legs: SeedTruckLeg[] = [];
+  for (const day of seedDepartureDays(seedAnchor)) legs.push(...(await buildSeedTruckLegsForDay(day, geocoder)));
+  return legs;
+}
+
+/** Number of distinct legs in the layout, and how many run on each kind of day. */
+export const SEED_LEG_COUNTS = {
+  total: SEED_LEGS.length,
+  daily: SEED_LEGS.filter((l) => l.schedule === 'DAILY').length,
+  evenDays: SEED_LEGS.filter((l) => l.schedule === 'EVEN_DAYS').length,
+  oddDays: SEED_LEGS.filter((l) => l.schedule === 'ODD_DAYS').length,
+} as const;

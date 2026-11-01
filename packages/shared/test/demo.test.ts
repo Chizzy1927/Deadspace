@@ -4,6 +4,8 @@ import {
   buildDemoTransportRequest,
   createStorageRequestInputSchema,
   createTransportRequestInputSchema,
+  DemoConfigSchema,
+  isSampleDataId,
   nextUtcMidnight,
 } from '../src/index.js';
 
@@ -21,5 +23,23 @@ describe.each(CLOCKS.map((c) => [c.toISOString(), c] as const))('demo requests a
   it('pass the shared request schemas', () => {
     expect(createTransportRequestInputSchema(() => now).safeParse(buildDemoTransportRequest(now)).success).toBe(true);
     expect(createStorageRequestInputSchema(() => now).safeParse(buildDemoStorageRequest(now)).success).toBe(true);
+  });
+});
+
+describe('isSampleDataId', () => {
+  it('is true only for seeded listing ids', () => {
+    expect(isSampleDataId('seed-truck-leg-20261112-01')).toBe(true);
+    expect(isSampleDataId('seed-warehouse-space-01')).toBe(true);
+    expect(isSampleDataId('cmvxzp51v0000xcut41s75x9j')).toBe(false);
+    expect(isSampleDataId('example-truck-leg')).toBe(false);
+    expect(isSampleDataId('')).toBe(false);
+  });
+});
+
+describe('DemoConfigSchema', () => {
+  it('accepts the demo-config response and rejects anything else', () => {
+    expect(DemoConfigSchema.parse({ listingCreationEnabled: false })).toEqual({ listingCreationEnabled: false });
+    expect(DemoConfigSchema.safeParse({ listingCreationEnabled: 'no' }).success).toBe(false);
+    expect(DemoConfigSchema.safeParse({}).success).toBe(false);
   });
 });

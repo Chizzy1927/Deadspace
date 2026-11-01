@@ -12,7 +12,10 @@ export default defineConfig({
     seed: 'tsx --conditions=@deadspace/source prisma/seed.ts',
   },
   datasource: {
-    // `prisma generate` needs no database, so a missing URL only fails commands that connect.
-    url: process.env.DATABASE_URL ?? '',
+    // Prisma CLI (migrate deploy, db:drift) prefers DIRECT_DATABASE_URL: a managed host's pooled
+    // URL (e.g. Neon's pgbouncer endpoint) is unsuitable for migrations. The app itself never reads
+    // it; runtime always uses DATABASE_URL. Blank counts as unset. `prisma generate` needs no
+    // database, so a missing URL only fails commands that connect.
+    url: process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL || '',
   },
 });

@@ -32,6 +32,36 @@ const baseDeps = {
   geocoder: new MockGeocoder(),
 };
 
+describe('GET /api/livez', () => {
+  it('returns 200 without touching the database, so frequent host health checks cannot wake it', async () => {
+    let databaseChecks = 0;
+    const app = createApp({
+      ...baseDeps,
+      checkDatabase: () => {
+        databaseChecks += 1;
+        return Promise.reject(new Error('livez must not query the database'));
+      },
+    });
+
+    const res = await request(app).get('/api/livez');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ status: 'ok' });
+    expect(databaseChecks).toBe(0);
+  });
+
+  it('stays up when the database is down, unlike the deep health check', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const app = createApp({
+      ...baseDeps,
+      checkDatabase: createDatabaseHealthCheck(() => Promise.reject(new Error('db down'))),
+    });
+
+    expect((await request(app).get('/api/livez')).status).toBe(200);
+    expect((await request(app).get('/api/health')).status).toBe(503);
+  });
+});
+
 describe('GET /api/health', () => {
   it('returns 200 with the PostGIS version when the database is healthy', async () => {
     const app = createApp({

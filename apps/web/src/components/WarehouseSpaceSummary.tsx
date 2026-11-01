@@ -1,4 +1,4 @@
-import type { WarehouseSpace } from '@deadspace/shared';
+import { isSampleDataId, type WarehouseSpace } from '@deadspace/shared';
 import type { ReactNode } from 'react';
 import {
   declaredCapabilities,
@@ -9,6 +9,7 @@ import {
   formatPallets,
   formatUsd,
 } from '../format';
+import { SampleBadge } from './SampleBadge';
 
 function Row({ term, children }: { term: string; children: ReactNode }) {
   return (
@@ -24,6 +25,11 @@ export function WarehouseSpaceSummary({ space }: { space: WarehouseSpace }) {
   const capabilities = declaredCapabilities(space);
   return (
     <dl className="divide-y divide-slate-100">
+      {isSampleDataId(space.id) && (
+        <Row term="Data">
+          <SampleBadge id={space.id} /> <span className="text-sm text-slate-600">Fictional demo listing.</span>
+        </Row>
+      )}
       <Row term="Location">{space.location.label}</Row>
       <Row term="Available">{formatDateRange(space.availableFrom, space.availableTo)}</Row>
       <Row term="Pallet positions offered">

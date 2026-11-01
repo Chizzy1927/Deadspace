@@ -1,3 +1,4 @@
+import { DemoDataSection } from '../components/landing/DemoDataSection';
 import { ExampleMatch } from '../components/landing/ExampleMatch';
 import { Hero } from '../components/landing/Hero';
 import { HowItWorks } from '../components/landing/HowItWorks';
@@ -16,6 +17,7 @@ export function LandingPage() {
       <HowItWorks />
       <ExampleMatch />
       <SideChooser />
+      <DemoDataSection />
     </>
   );
 }

@@ -12,8 +12,10 @@
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "db:drift": "prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code",
     "db:seed": "prisma db seed",
+    "db:status": "node --env-file-if-exists=../../.env --conditions=@deadspace/source --import tsx prisma/db-status.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

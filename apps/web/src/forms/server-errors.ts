@@ -1,4 +1,4 @@
-import type { ValidationIssues } from '@deadspace/shared';
+import type { ApiErrorCode, ValidationIssues } from '@deadspace/shared';
 import { ApiError } from '../api/client';
 
 type SetFieldError<F extends string> = (field: F, error: { message: string }) => void;
@@ -24,6 +24,18 @@ export function applyServerIssues<F extends string>(
 }
 
 /**
+ * Plain-language messages for the public-demo guard rails, so a refused submission explains itself
+ * instead of showing a generic failure. They are the same for every form.
+ */
+const DEMO_GUARD_MESSAGES: Partial<Record<ApiErrorCode, string>> = {
+  FEATURE_DISABLED:
+    'Saving listings is turned off in this public demo, so nothing was saved. Shippers can still search the fictional sample listings.',
+  RATE_LIMITED:
+    'This demo limits how much one visitor can create in an hour, so nothing was saved. Please try again later.',
+  DEMO_FULL: 'The demo has reached its storage limit, so nothing was saved. Please try again later.',
+};
+
+/**
  * Handles a failed form submission: field-level API issues go onto their fields; returns the
  * form-level message for everything else, or null when every problem was shown on a field.
  */
@@ -32,6 +44,10 @@ export function submitErrorMessage<F extends string>(
   fields: readonly F[],
   setError: SetFieldError<F>,
 ): string | null {
+  if (error instanceof ApiError && error.code !== 'UNKNOWN') {
+    const guard = DEMO_GUARD_MESSAGES[error.code];
+    if (guard) return guard;
+  }
   if (!(error instanceof ApiError) || error.issues.length === 0) return error.message;
   const unmapped = applyServerIssues(error.issues, fields, setError);
   return unmapped.length > 0 ? unmapped.map((i) => i.message).join(' ') : null;
