@@ -30,15 +30,22 @@ in `.env.example`.
 
 ## Migrations
 
-Production runs `npm run db:deploy` as the Render pre-deploy command, before the new version starts. If it
-fails the deploy fails and the previous version keeps serving. The first migration runs
-`CREATE EXTENSION IF NOT EXISTS postgis`, so the database role needs permission to create it. Write
-migrations so the previous app version still works on the new schema (add first, remove later), because
-rolling the app back does not roll the schema back.
+Production migrations are **manual**: the Render Free plan has no pre-deploy command and the app never migrates.
+For a change that includes a migration:
+
+1. Merge the PR with CI green, but hold the deploy (or just run step 2 first; auto-deploy takes a few minutes).
+2. In a fresh shell set `DIRECT_DATABASE_URL` to Neon's **direct** URL (and `DATABASE_URL` to the same), run
+   `npm run db:deploy`, and check the `Datasource ... at <host>` line names the Neon host. Close the shell.
+3. Let the deploy proceed (or use Render's Manual Deploy). If step 2 failed, do not deploy.
+
+The first migration runs `CREATE EXTENSION IF NOT EXISTS postgis`, so the database role needs permission to create it.
+Write migrations so the previous app version still works on the new schema (add first, remove later), because the old
+version serves until the new one is up and rolling the app back does not roll the schema back. Create a Neon branch
+before any data-changing migration.
 
 ## Initial production seed (manual, once)
 
-Run from a trusted machine, after the first `db:deploy` has succeeded:
+Run from a trusted machine, right after the first `db:deploy` has succeeded and before creating the Render service:
 
 1. In a fresh shell, set `DATABASE_URL` to the production **direct** (non-pooled) URL for this session only.
 2. Run `npm run db:deploy` first and read the `Datasource ... at <host>` line it prints. It must be the
