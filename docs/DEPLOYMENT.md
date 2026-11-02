@@ -30,7 +30,7 @@ Render never receives the direct URL: it does not migrate.
 | `DATABASE_URL`              | Neon **pooled** URL | yes    | Runtime. Host contains `-pooler`. Missing: the API exits at startup.                          |
 | `NODE_VERSION`              | `24`                | no     | Build.                                                                                        |
 | `NODE_ENV`                  | `production`        | no     |                                                                                               |
-| `TRUST_PROXY`               | `2`                 | no     | Client IP for rate limits (Cloudflare + Render LB). Wrong: limits do not bind a visitor.      |
+| `TRUST_PROXY_PROFILE`       | `render-cloudflare` | no     | Client IP for rate limits, trusted position by position. Wrong: limits do not bind a visitor. |
 | `DEMO_LISTING_CREATION`     | `false`             | no     | Missing: public supply creation would be ON.                                                  |
 | `WRITE_RATE_LIMIT_PER_HOUR` | `30`                | no     | Per visitor IP, per create route.                                                             |
 | `MAX_ROWS_PER_TABLE`        | `5000`              | no     | Refuses new rows past this size.                                                              |
@@ -153,24 +153,29 @@ Against the URL you give it, with Chromium on desktop and at 390 px:
    `statementNameGenerator` is configured (we configure none), and Neon strings carrying `channel_binding=require` are accepted
    (`pg` ignores that parameter). If the smoke test still shows prepared-statement or connection errors, point `DATABASE_URL` at the
    direct URL instead.
-2. **Rate-limit key (`TRUST_PROXY`).** Render's own article says all inbound traffic passes through Cloudflare and Render's load
-   balancers (two proxies), but Render does not document the hop count. The first deploy used the fail-safe `TRUST_PROXY=1` and the
-   smoke test's forged-header check failed (0 of 70 limited). Measured on the live service: responses carry `Server: cloudflare` and
-   `x-render-origin-server: Render`, and with `1` the key was a Cloudflare edge address that changed between requests (the same
-   forged header landed in different buckets; the hash of the tester's real IP matched none). The app therefore sees
-   `X-Forwarded-For: <client-sent...>, <real client, added by Cloudflare>, <Cloudflare edge, added by Render's load balancer>`.
-   Express takes the Nth entry from the right, so `2` selects the real client and anything a visitor forges sits further left and is
-   never read. `2` is correct only for this chain: with only one proxy a forged header would choose the bucket, which the smoke
-   test's forged-header check catches. Re-check after any Render networking change. Prove what the key is, with no code change:
-   the limiter's `RateLimit-Policy` header carries `pk=:<hash of the key>:`.
+2. **Rate-limit key (`TRUST_PROXY_PROFILE=render-cloudflare`).** Render does not document its proxy chain, so it was measured with a
+   temporary token-gated diagnostic. Observed on the live service, for a clean and a forged request alike: socket `::1`, then a Render
+   internal `10.28.x.x`, then a Cloudflare edge `162.159.x.x`, then the real client the Cloudflare hop recorded; anything a visitor
+   forges in `X-Forwarded-For` sits further left. `TRUST_PROXY=1` and `2` both keyed the limiter on a Cloudflare edge address that
+   changes between requests (the smoke test's forged-header check failed, 0 of 70 limited). A hop count of `3` selects the client on this
+   path but fails open if a request ever has fewer proxies (the forged value becomes the key), so production uses a trust function instead:
+   position 0 must be loopback, position 1 a `10.0.0.0/8` address, position 2 a Cloudflare proxy range, and nothing past that is trusted.
+   Any other shape stops trust at the first mismatch instead of advancing into client-supplied entries. Express still derives `req.ip`;
+   there is no custom key generator. `TRUST_PROXY` (hop count) and `TRUST_PROXY_PROFILE` must not both be set (startup error).
+   - **Cloudflare ranges** live in `apps/api/src/config/trust-proxy.ts`, copied from https://www.cloudflare.com/ips-v4 and
+     https://www.cloudflare.com/ips-v6 (fetched 2026-11-01). Re-check both lists periodically. An unlisted range only degrades those
+     visitors to a shared bucket; it cannot let a forged header choose the key.
+   - **Residual risk:** a request that skipped the Cloudflare hop while its real client address was itself inside a Cloudflare range would
+     expose the next entry. Not observed. Re-check the chain after any Render networking change.
+   - **Prove what the key is**, with no code change: the limiter's `RateLimit-Policy` header carries `pk=:<hash of the key>:`.
    ```
    curl -4 -s ifconfig.me        # your public IPv4 (any "what is my IP" site works; use IPv4 for both commands)
    curl -4 -s -D - -o /dev/null "https://<name>.onrender.com/api/geocode/search?q=dal" | grep -i ratelimit-policy
    node -e "const c=require('crypto');console.log(Buffer.from(c.createHash('sha256').update(process.argv[1]).digest('hex').slice(0,12)).toString('base64'))" YOUR.IPV4
    ```
    The `pk` must equal the printed hash (the limiter is keyed on your real address), stay the same when you add different forged
-   `X-Forwarded-For` headers, **and** the smoke test's forged-header check must pass. If the `pk` is a different, changing value, the
-   key is an edge address: the hop count is too low.
+   `X-Forwarded-For` headers, **and** the smoke test's forged-header check must pass. A different, changing `pk` means the key is an
+   edge address.
 3. Cold starts stack: Render Free wakes in about a minute, and the first database request after five idle minutes also wakes Neon
    (a fraction of a second to a few seconds). Follow the warm-up in step 4 of the first deployment before a demo.
 4. Render's health check uses `/api/livez` (no database) so Neon can still suspend; do not point it at `/api/health`, which would

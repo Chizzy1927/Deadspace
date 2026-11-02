@@ -1,5 +1,6 @@
 import cors from 'cors';
 import express, { type Express } from 'express';
+import type { TrustProxy } from './config/trust-proxy.js';
 import type { PrismaClient } from './db.js';
 import type { Geocoder } from './geocoding/index.js';
 import type { DemoPolicy } from './middleware/demo-policy.js';
@@ -20,7 +21,7 @@ export interface AppDeps {
   geocoder: Geocoder;
   geocodeRateLimit?: GeocodeRateLimit;
   /** Reverse-proxy hops to trust when deriving client IPs. */
-  trustProxy?: number;
+  trustProxy?: TrustProxy;
   /** Public-demo write limits; omitted means unrestricted (local dev, tests). */
   demoPolicy?: DemoPolicy;
   /** TEMPORARY: when set, mounts the token-gated proxy diagnostic (see middleware/proxy-diagnostic.ts). */

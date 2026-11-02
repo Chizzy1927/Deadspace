@@ -53,7 +53,8 @@ describe('render.yaml', () => {
 
   it('keeps the public-demo safeguards on', () => {
     expect(byKey.DEMO_LISTING_CREATION?.value).toBe('false');
-    expect(byKey.TRUST_PROXY?.value).toBe('2'); // measured on Render: Cloudflare + Render LB (docs/DEPLOYMENT.md)
+    expect(byKey.TRUST_PROXY_PROFILE?.value).toBe('render-cloudflare'); // measured chain (docs/DEPLOYMENT.md)
+    expect(byKey.TRUST_PROXY).toBeUndefined(); // a hop count together with the profile fails startup
     expect(byKey.GEOCODER?.value).toBe('mock');
     expect(byKey.NODE_ENV?.value).toBe('production');
   });
@@ -78,7 +79,8 @@ describe('render.yaml', () => {
 
     expect(parsed).toMatchObject({
       NODE_ENV: 'production',
-      TRUST_PROXY: 2,
+      TRUST_PROXY: 0,
+      TRUST_PROXY_PROFILE: 'render-cloudflare',
       DEMO_LISTING_CREATION: false,
       WRITE_RATE_LIMIT_PER_HOUR: 30,
       MAX_ROWS_PER_TABLE: 5000,
