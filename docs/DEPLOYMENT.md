@@ -153,8 +153,8 @@ Against the URL you give it, with Chromium on desktop and at 390 px:
    `statementNameGenerator` is configured (we configure none), and Neon strings carrying `channel_binding=require` are accepted
    (`pg` ignores that parameter). If the smoke test still shows prepared-statement or connection errors, point `DATABASE_URL` at the
    direct URL instead.
-2. **Rate-limit key (`TRUST_PROXY_PROFILE=render-cloudflare`).** Render does not document its proxy chain, so it was measured with a
-   temporary token-gated diagnostic. Observed on the live service, for a clean and a forged request alike: socket `::1`, then a Render
+2. **Rate-limit key (`TRUST_PROXY_PROFILE=render-cloudflare`).** Render does not document its proxy chain, so it was measured on the live
+   service with a temporary diagnostic (since removed). Observed on the live service, for a clean and a forged request alike: socket `::1`, then a Render
    internal `10.28.x.x`, then a Cloudflare edge `162.159.x.x`, then the real client the Cloudflare hop recorded; anything a visitor
    forges in `X-Forwarded-For` sits further left. `TRUST_PROXY=1` and `2` both keyed the limiter on a Cloudflare edge address that
    changes between requests (the smoke test's forged-header check failed, 0 of 70 limited). A hop count of `3` selects the client on this
