@@ -20,7 +20,7 @@ Deliberately left out of the landing/demo phase; not forgotten.
   standalone page could go deeper (hard constraints per flow, full score formulas).
 - **Storage example card on the landing page.** The storage example is a link on the "I need capacity"
   card; only a transport match is shown as the worked example.
-- **Deployment.** Still Phase 6 (see `docs/ARCHITECTURE.md` §9).
+- **Deployment.** Done in Phase 6 (see `docs/DEPLOYMENT.md`).
 - **Seed anchor visibility.** The seed's anchor date is only visible via `SEED_ANCHOR` / the seed output. If
   more than about a day passes between seeding and a demo, matches can disappear until re-seeding.
 - **Reproducible README screenshots.** `docs/screenshots/` was captured by hand with headless Chrome against
