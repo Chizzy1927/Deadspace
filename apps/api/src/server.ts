@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { createApp } from './app.js';
 import { loadEnv } from './config/env.js';
+import { trustProxyForProfile } from './config/trust-proxy.js';
 import { createPrismaClient } from './db.js';
 import { createGeocoder } from './geocoding/index.js';
 import { getPostgisVersion } from './repositories/geo.repository.js';
@@ -20,7 +21,7 @@ const app = createApp({
   checkDatabase: createDatabaseHealthCheck(() => getPostgisVersion(prisma)),
   prisma,
   geocoder: createGeocoder(env, prisma),
-  trustProxy: env.TRUST_PROXY,
+  trustProxy: env.TRUST_PROXY_PROFILE ? trustProxyForProfile(env.TRUST_PROXY_PROFILE) : env.TRUST_PROXY,
   ...(env.DIAG_PROXY_TOKEN ? { diagProxyToken: env.DIAG_PROXY_TOKEN } : {}), // TEMPORARY
   ...(serveWeb ? { webDist } : {}),
   demoPolicy: {

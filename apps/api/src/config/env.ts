@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TRUST_PROXY_PROFILES } from './trust-proxy.js';
 
 const EnvSchema = z
   .object({
@@ -6,8 +7,10 @@ const EnvSchema = z
     PORT: z.coerce.number().int().positive().default(3001),
     DATABASE_URL: z.url(),
     WEB_ORIGIN: z.url().default('http://localhost:5173'),
-    // Reverse-proxy hops to trust for client IPs (rate limiting). 0 off-proxy; 1 on Render.
+    // Reverse-proxy hops to trust for client IPs (rate limiting). 0 off-proxy (default).
     TRUST_PROXY: z.coerce.number().int().min(0).default(0),
+    // Named proxy chain to trust position by position instead of a hop count (fails closed). Production on Render.
+    TRUST_PROXY_PROFILE: z.preprocess((v) => (v === '' ? undefined : v), z.enum(TRUST_PROXY_PROFILES).optional()),
     // Public-demo write controls: tunable policy defaults, not security controls (no auth in V1).
     DEMO_LISTING_CREATION: z
       .enum(['true', 'false'])
@@ -22,6 +25,10 @@ const EnvSchema = z
     GEOAPIFY_API_KEY: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(1).optional()),
     // TEMPORARY: enables the token-gated proxy diagnostic. Unset in normal operation.
     DIAG_PROXY_TOKEN: z.preprocess((v) => (v === '' ? undefined : v), z.string().min(32).optional()),
+  })
+  .refine((env) => env.TRUST_PROXY === 0 || !env.TRUST_PROXY_PROFILE, {
+    path: ['TRUST_PROXY_PROFILE'],
+    message: 'Set either TRUST_PROXY (hop count) or TRUST_PROXY_PROFILE, not both',
   })
   .refine((env) => env.GEOCODER !== 'geoapify' || env.GEOAPIFY_API_KEY, {
     path: ['GEOAPIFY_API_KEY'],

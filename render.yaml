@@ -26,9 +26,10 @@ services:
         value: '24'
       - key: NODE_ENV
         value: production
-      # Two proxies (Cloudflare, then Render's load balancer) sit in front of the app; see docs/DEPLOYMENT.md.
-      - key: TRUST_PROXY
-        value: '2'
+      # Client IP for rate limits: the measured Render chain (loopback, Render internal, Cloudflare), trusted position
+      # by position so any other shape fails closed. Deliberately not a TRUST_PROXY hop count; see docs/DEPLOYMENT.md.
+      - key: TRUST_PROXY_PROFILE
+        value: render-cloudflare
       - key: DEMO_LISTING_CREATION
         value: 'false'
       - key: WRITE_RATE_LIMIT_PER_HOUR
