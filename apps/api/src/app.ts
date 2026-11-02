@@ -5,7 +5,6 @@ import type { PrismaClient } from './db.js';
 import type { Geocoder } from './geocoding/index.js';
 import type { DemoPolicy } from './middleware/demo-policy.js';
 import { errorHandler, notFound } from './middleware/errors.js';
-import { proxyDiagnosticRouter } from './middleware/proxy-diagnostic.js';
 import { noIndex, webAppRouter } from './middleware/web-app.js';
 import { demoConfigRouter } from './routes/demo-config.js';
 import { geocodeRouter, type GeocodeRateLimit } from './routes/geocode.js';
@@ -24,8 +23,6 @@ export interface AppDeps {
   trustProxy?: TrustProxy;
   /** Public-demo write limits; omitted means unrestricted (local dev, tests). */
   demoPolicy?: DemoPolicy;
-  /** TEMPORARY: when set, mounts the token-gated proxy diagnostic (see middleware/proxy-diagnostic.ts). */
-  diagProxyToken?: string;
   /** Directory of the built web app. When set, the API also serves the SPA (same-origin deployment). */
   webDist?: string;
 }
@@ -39,7 +36,6 @@ export function createApp({
   geocodeRateLimit,
   trustProxy = 0,
   demoPolicy,
-  diagProxyToken,
   webDist,
 }: AppDeps): Express {
   const app = express();
@@ -49,7 +45,6 @@ export function createApp({
   app.use(cors({ origin: webOrigin }));
   app.use(express.json({ limit: '100kb' }));
 
-  if (diagProxyToken) app.use('/api', proxyDiagnosticRouter(diagProxyToken)); // TEMPORARY
   app.use('/api', healthRouter(checkDatabase));
   app.use('/api', demoConfigRouter(demoPolicy));
   app.use('/api', geocodeRouter(geocoder, geocodeRateLimit));

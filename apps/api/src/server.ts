@@ -22,7 +22,6 @@ const app = createApp({
   prisma,
   geocoder: createGeocoder(env, prisma),
   trustProxy: env.TRUST_PROXY_PROFILE ? trustProxyForProfile(env.TRUST_PROXY_PROFILE) : env.TRUST_PROXY,
-  ...(env.DIAG_PROXY_TOKEN ? { diagProxyToken: env.DIAG_PROXY_TOKEN } : {}), // TEMPORARY
   ...(serveWeb ? { webDist } : {}),
   demoPolicy: {
     listingCreationEnabled: env.DEMO_LISTING_CREATION,
